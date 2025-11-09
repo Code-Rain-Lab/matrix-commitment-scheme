@@ -1,5 +1,5 @@
 use ark_ff::{Field, UniformRand};
-use ark_std::rand::{rngs::StdRng, SeedableRng};
+use ark_std::rand::{SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha256};
 
 fn main() {
@@ -53,6 +53,34 @@ pub fn setup<F: Field + UniformRand>(n: usize, m: usize, seed: &str) -> Vec<Vec<
     }
 
     matrix
+}
+
+pub fn decompose<F: Field>(z: Vec<F>) -> Vec<Vec<F>> {
+    let res = Vec::new();
+    for z in z {
+        let colom = bit_decompose_vector(z);
+        // extend the res with the coloum vector.
+    }
+
+    res
+}
+
+// D is the max size bit lenght of the field. If the field is Goldilock, it will be 64.
+pub fn bit_decompose_vector<F: Field>(e: F) -> Vec<F> {
+    let mut result = [F::zero(); D];
+    let bigint = x.into_bigint();
+    let limbs = bigint.as_ref();
+    for (bit_idx, slot) in result.iter_mut().enumerate() {
+        let limb_idx = bit_idx / 64;
+        if limb_idx >= limbs.len() {
+            break;
+        }
+        let bit = (limbs[limb_idx] >> (bit_idx % 64)) & 1;
+        if bit == 1 {
+            *slot = F::one();
+        }
+    }
+    result
 }
 
 pub fn commit<F: Field>(a: Vec<Vec<F>>, z: Vec<F>) -> Vec<F> {

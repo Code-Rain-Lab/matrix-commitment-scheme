@@ -1,4 +1,4 @@
-use ark_ff::{Field, UniformRand};
+use ark_ff::{BigInteger, Field, PrimeField, UniformRand};
 use ark_std::rand::{SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha256};
 
@@ -55,32 +55,35 @@ pub fn setup<F: Field + UniformRand>(n: usize, m: usize, seed: &str) -> Vec<Vec<
     matrix
 }
 
-pub fn decompose<F: Field>(z: Vec<F>) -> Vec<Vec<F>> {
-    let res = Vec::new();
-    for z in z {
-        let colom = bit_decompose_vector(z);
-        // extend the res with the coloum vector.
+pub fn decompose<F: PrimeField>(z: Vec<F>) -> Vec<Vec<F>> {
+    if z.is_empty() {
+        return Vec::new();
+    }
+    let bit_len = F::MODULUS_BIT_SIZE as usize;
+    let mut rows = vec![Vec::with_capacity(z.len()); bit_len];
+
+    for elem in z {
+        let column_bits = bit_decompose_vector(elem);
+        for (row, bit) in rows.iter_mut().zip(column_bits.into_iter()) {
+            row.push(bit);
+        }
     }
 
-    res
+    rows
 }
 
-// D is the max size bit lenght of the field. If the field is Goldilock, it will be 64.
-pub fn bit_decompose_vector<F: Field>(e: F) -> Vec<F> {
-    let mut result = [F::zero(); D];
-    let bigint = x.into_bigint();
-    let limbs = bigint.as_ref();
-    for (bit_idx, slot) in result.iter_mut().enumerate() {
-        let limb_idx = bit_idx / 64;
-        if limb_idx >= limbs.len() {
-            break;
-        }
-        let bit = (limbs[limb_idx] >> (bit_idx % 64)) & 1;
-        if bit == 1 {
-            *slot = F::one();
-        }
-    }
-    result
+pub fn bit_decompose_vector<F: PrimeField>(element: F) -> Vec<F> {
+    let bit_len = F::MODULUS_BIT_SIZE as usize;
+    let bigint = element.into_bigint();
+    (0..bit_len)
+        .map(|bit_idx| {
+            if bigint.get_bit(bit_idx) {
+                F::ONE
+            } else {
+                F::ZERO
+            }
+        })
+        .collect()
 }
 
 pub fn commit<F: Field>(a: Vec<Vec<F>>, z: Vec<F>) -> Vec<F> {
@@ -111,6 +114,7 @@ pub fn commit<F: Field>(a: Vec<Vec<F>>, z: Vec<F>) -> Vec<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ark_ff::AdditiveGroup;
     use ark_test_curves::bls12_381::Fr;
 
     #[test]
@@ -155,5 +159,22 @@ mod tests {
         let vector = vec![Fr::from(5u64), Fr::from(6u64)];
         let commitment = commit(matrix, vector);
         assert_eq!(commitment, vec![Fr::from(17u64), Fr::from(39u64)]);
+    }
+
+    #[test]
+    fn bit_decompose_vector_matches_binary_expansion() {
+        let bits = bit_decompose_vector(Fr::from(5u64));
+        assert_eq!(bits[0], Fr::ONE); // 1
+        assert_eq!(bits[1], Fr::ZERO); // 0
+        assert_eq!(bits[2], Fr::ONE); // 1
+    }
+
+    #[test]
+    fn decompose_stacks_bit_columns() {
+        let rows = decompose(vec![Fr::from(1u64), Fr::from(2u64)]);
+        assert_eq!(rows[0][0], Fr::ONE); // bit 0 of 1
+        assert_eq!(rows[0][1], Fr::ZERO); // bit 0 of 2
+        assert_eq!(rows[1][0], Fr::ZERO); // bit 1 of 1
+        assert_eq!(rows[1][1], Fr::ONE); // bit 1 of 2
     }
 }

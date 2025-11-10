@@ -53,13 +53,16 @@ impl<F: PrimeField> MatrixCommitmentScheme<F> {
                 let mut aggregate = [F::ZERO; D];
                 for (column, element) in z.iter().enumerate().take(M) {
                     let rq_column = Rq::reject_sampling::<F>(&self.seed, row, column);
-                    let rotations = rot_block::<F, D>(&rq_column, true);
                     for bit_idx in bit_index(*element) {
                         if bit_idx >= D {
                             continue;
                         }
                         for (row_idx, value) in aggregate.iter_mut().enumerate() {
-                            *value += rotations[row_idx][bit_idx];
+                            let offset = ((row_idx as isize - bit_idx as isize)
+                                .rem_euclid(D as isize))
+                                as usize;
+                            let sign = if row_idx < bit_idx { -F::ONE } else { F::ONE };
+                            *value += rq_column[offset] * sign;
                         }
                     }
                 }
@@ -75,26 +78,6 @@ pub fn bit_index<F: PrimeField>(element: F) -> Vec<usize> {
     (0..bit_len)
         .filter(|bit_idx| bigint.get_bit(*bit_idx))
         .collect()
-}
-
-pub fn rot_block<F: Field, const N: usize>(
-    base_column: &[F; N],
-    use_negacyclic: bool,
-) -> Vec<[F; N]> {
-    let mut block = vec![[F::ZERO; N]; N];
-
-    for (row_idx, row) in block.iter_mut().enumerate() {
-        for (col_idx, cell) in row.iter_mut().enumerate() {
-            let offset = ((row_idx as isize - col_idx as isize).rem_euclid(N as isize)) as usize;
-            let sign = if use_negacyclic && row_idx < col_idx {
-                -F::ONE
-            } else {
-                F::ONE
-            };
-            *cell = sign * base_column[offset];
-        }
-    }
-    block
 }
 
 fn main() {

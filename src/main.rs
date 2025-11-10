@@ -1,6 +1,7 @@
 use ark_ff::{BigInteger, Field, PrimeField, UniformRand};
 use ark_std::rand::{SeedableRng, rngs::StdRng};
 use core::marker::PhantomData;
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 const D: usize = 64;
@@ -22,6 +23,7 @@ impl Rq {
         let mut column_vec = [F::ZERO; D];
         for element in column_vec.iter_mut() {
             // Reject zero samples to avoid degenerate columns.
+            // Is this necessasry?
             let sampled = loop {
                 let candidate = F::rand(&mut rng);
                 if !candidate.is_zero() {
@@ -49,6 +51,7 @@ impl<F: PrimeField> MatrixCommitmentScheme<F> {
 
     pub fn commit(&self, z: Vec<F>) -> Vec<[F; D]> {
         (0..KAPPA)
+            .into_par_iter()
             .map(|row| {
                 let mut aggregate = [F::ZERO; D];
                 for (column, element) in z.iter().enumerate().take(M) {

@@ -111,8 +111,8 @@ fn negacyclic_rot_block<F: Field>(base_column: &[F; D]) -> Vec<[F; D]> {
     block
 }
 
-// I wnat to apply the d*d rotation matrix to d*m matrix. (not to the ring)
-fn apply_rotation<F: Field>(rotation: &[[F; D]], vector: &[F; D]) -> [F; D] {
+// Applies a D×D rotation matrix to a single D-dimensional column vector.
+fn apply_rotation_to_vector<F: Field>(rotation: &[[F; D]], vector: &[F; D]) -> [F; D] {
     let mut result = [F::ZERO; D];
     for (row_idx, row) in rotation.iter().enumerate() {
         let mut acc = F::ZERO;
@@ -122,6 +122,17 @@ fn apply_rotation<F: Field>(rotation: &[[F; D]], vector: &[F; D]) -> [F; D] {
         result[row_idx] = acc;
     }
     result
+}
+
+// Applies a D×D rotation matrix to a D×M matrix represented column-wise.
+fn apply_rotation_to_matrix<F: Field>(
+    rotation: &[[F; D]],
+    matrix_columns: &[[F; D]],
+) -> Vec<[F; D]> {
+    matrix_columns
+        .iter()
+        .map(|column| apply_rotation_to_vector(rotation, column))
+        .collect()
 }
 
 fn negacyclic_mul<F: Field>(a: &[F; D], b: &[F; D]) -> [F; D] {
@@ -148,7 +159,7 @@ fn check_rotation_identity<F: Field, R: Rng + ?Sized>(rng: &mut R) -> bool {
     let a = random_ring_element::<F, _>(rng);
     let b = random_ring_element::<F, _>(rng);
     let rotation = negacyclic_rot_block(&a);
-    let lhs = apply_rotation(rotation.as_slice(), &b);
+    let lhs = apply_rotation_to_vector(rotation.as_slice(), &b);
     let rhs = negacyclic_mul(&a, &b);
     lhs == rhs
 }
@@ -163,15 +174,19 @@ fn verify_challenge_linearity<F: PrimeField>(
         D,
         "linearity check currently expects a D-sized witness"
     );
+    // the result of the commit method is a single commitment, not vector of commitments.
+    // I think you misunderstood this.
+    // the commitment is d*κ matrix of the F
     let commitments = scheme.commit(witness.to_vec());
+    // so here, the rotation matrix of d*d should be apply to the commitment of d*κ
     let lhs: Vec<[F; D]> = commitments
         .iter()
-        .map(|row| apply_rotation(rotation, row))
+        .map(|row| apply_rotation_to_vector(rotation, row))
         .collect();
 
     let mut witness_array = [F::ZERO; D];
     witness_array.copy_from_slice(witness);
-    let challenged_witness = apply_rotation(rotation, &witness_array);
+    let challenged_witness = apply_rotation_to_vector(rotation, &witness_array);
     let rhs = scheme.commit(challenged_witness.to_vec());
     lhs == rhs
 }
@@ -197,6 +212,15 @@ fn main() {
 
     let rot_identity = check_rotation_identity::<Fr, _>(&mut rng);
     println!("rot(a)*cf(b) == cf(a*b)? {rot_identity}");
+
+    let dm_matrix: Vec<[Fr; D]> = (0..3)
+        .map(|_| random_ring_element::<Fr, _>(&mut rng))
+        .collect();
+    let rotated_matrix = apply_rotation_to_matrix(rot_slice, dm_matrix.as_slice());
+    println!(
+        "rotation * matrix column0 first four: {:?}",
+        &rotated_matrix[0][..4]
+    );
 
     let linearity_holds = verify_challenge_linearity(&scheme, rot_slice, &witness);
     println!("challenge * commit(z) == commit(challenge * z)? {linearity_holds}");

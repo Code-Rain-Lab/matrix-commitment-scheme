@@ -22,7 +22,7 @@ pub fn main() {
     let challenge = MatrixCommitmentScheme::<Fr>::challenge("rotation_challenge_seed");
 
     println!("commitment rows (κ): {}", KAPPA);
-    println!("rotation challenge columns: {}", challenge.len());
+    println!("rotation challenge dimension: {}x{}", challenge.len(), challenge[0].len());
     println!(
         "first commitment column first four coeffs: {:?}",
         &commitment[0].coeffs()[..4]

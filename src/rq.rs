@@ -55,10 +55,6 @@ impl<F: PrimeField> Rq<F> {
         Self { coeffs }
     }
 
-    pub fn from_coeffs(coeffs: [F; D]) -> Self {
-        Self { coeffs }
-    }
-
     pub fn reject_sampling(seed: &str, row: usize, column: usize) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(seed.as_bytes());
@@ -82,7 +78,7 @@ impl<F: PrimeField> Rq<F> {
         Self { coeffs: column_vec }
     }
 
-    pub fn rotation_block_from_seed(seed: &str) -> [Self; D] {
+    pub fn rotation_matrix_from_seed(seed: &str) -> [[F; D]; D] {
         let mut hasher = Sha256::new();
         hasher.update(seed.as_bytes());
         let digest = hasher.finalize();
@@ -100,8 +96,7 @@ impl<F: PrimeField> Rq<F> {
                 _ => F::from(2u64),
             };
         }
-        let rotations = Self::negacyclic_rot_block(&base_column);
-        core::array::from_fn(|idx| Self::from_coeffs(rotations[idx]))
+        Self::negacyclic_rot_block(&base_column)
     }
 
     pub fn negacyclic_rot_block(base_column: &[F; D]) -> [[F; D]; D] {
@@ -116,6 +111,20 @@ impl<F: PrimeField> Rq<F> {
                 value
             })
         })
+    }
+
+    pub fn apply_rotation(matrix: &[[F; D]; D], vector: &Self) -> Self {
+        let mut result = [F::ZERO; D];
+        for (row_idx, row) in matrix.iter().enumerate() {
+            let mut acc = F::ZERO;
+            for (col_idx, coeff) in row.iter().enumerate() {
+                let mut term = *coeff;
+                term.mul_assign(&vector.coeffs[col_idx]);
+                acc.add_assign(&term);
+            }
+            result[row_idx] = acc;
+        }
+        Self { coeffs: result }
     }
 }
 

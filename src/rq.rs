@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::D;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Rq<F: PrimeField> {
     coeffs: [F; D],
 }
@@ -25,6 +25,9 @@ impl<F: PrimeField> Rq<F> {
         let mut result = [F::ZERO; D];
         for (i, a_coeff) in self.coeffs.iter().enumerate() {
             for (j, b_coeff) in rhs.coeffs.iter().enumerate() {
+                if b_coeff == &F::ZERO {
+                    continue;
+                }
                 let idx = (i + j) % D;
                 let sign = if i + j >= D { -F::ONE } else { F::ONE };
                 let mut term = *a_coeff;
@@ -42,6 +45,10 @@ impl<F: PrimeField> Rq<F> {
             ci.add_assign(b);
         }
         Self { coeffs: c }
+    }
+
+    pub fn mul_vector(&self, rhs: &Vec<Self>) -> Vec<Self> {
+        rhs.iter().map(|a| self.mul(a)).collect()
     }
 
     pub fn from_field_element(zq: F) -> Self {
@@ -78,7 +85,7 @@ impl<F: PrimeField> Rq<F> {
         Self { coeffs: column_vec }
     }
 
-    pub fn rotation_matrix_from_seed(seed: &str) -> [[F; D]; D] {
+    pub fn challenge(seed: &str) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(seed.as_bytes());
         let digest = hasher.finalize();
@@ -86,8 +93,8 @@ impl<F: PrimeField> Rq<F> {
         rng_seed.copy_from_slice(&digest);
         let mut rng = StdRng::from_seed(rng_seed);
 
-        let mut base_column = [F::ZERO; D];
-        for coeff in base_column.iter_mut() {
+        let mut column_vec = [F::ZERO; D];
+        for coeff in column_vec.iter_mut() {
             let draw = rng.gen_range(0..4);
             *coeff = match draw {
                 0 => -F::ONE,
@@ -96,7 +103,7 @@ impl<F: PrimeField> Rq<F> {
                 _ => F::from(2u64),
             };
         }
-        Self::negacyclic_rot_block(&base_column)
+        Self { coeffs: column_vec }
     }
 
     pub fn negacyclic_rot_block(base_column: &[F; D]) -> [[F; D]; D] {
@@ -111,20 +118,6 @@ impl<F: PrimeField> Rq<F> {
                 value
             })
         })
-    }
-
-    pub fn apply_rotation(matrix: &[[F; D]; D], vector: &Self) -> Self {
-        let mut result = [F::ZERO; D];
-        for (row_idx, row) in matrix.iter().enumerate() {
-            let mut acc = F::ZERO;
-            for (col_idx, coeff) in row.iter().enumerate() {
-                let mut term = *coeff;
-                term.mul_assign(&vector.coeffs[col_idx]);
-                acc.add_assign(&term);
-            }
-            result[row_idx] = acc;
-        }
-        Self { coeffs: result }
     }
 }
 

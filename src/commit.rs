@@ -61,8 +61,6 @@ mod tests {
     #[modulus = "18446744069414584289"] // = (2^64 − 2^32 + 1) − 32
     #[generator = "3"]
     pub struct FqConfig;
-
-    // 64bit（u64×1 limb）で表現できる素体
     pub type Fq = Fp64<MontBackend<FqConfig, 1>>;
 
     #[test]

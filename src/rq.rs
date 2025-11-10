@@ -1,65 +1,62 @@
 use ark_ff::{BigInteger, PrimeField};
-use ark_std::rand::{SeedableRng, rngs::StdRng};
+use ark_std::rand::{Rng, SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha256};
 
 use crate::D;
 
-pub struct Rq<F: PrimeField>([F; D]);
+#[derive(Clone, Debug)]
+pub struct Rq<F: PrimeField> {
+    coeffs: [F; D],
+}
 
 impl<F: PrimeField> Rq<F> {
-    /// 畳み込み: self * rhs（mod x^D + 1）
-    pub fn mul(&self, rhs: &Self) -> Self {
-        let rot = self.rot();
-        let mut c: [F; D] = core::array::from_fn(|_| F::zero());
+    pub fn zero() -> Self {
+        Self {
+            coeffs: [F::ZERO; D],
+        }
+    }
 
-        for i in 0..D {
-            let b_i = &rhs.0[i];
-            for j in 0..D {
-                let mut t = rot[i][j];
-                t.mul_assign(b_i);
-                c[j].add_assign(&t);
+    pub fn coeffs(&self) -> &[F; D] {
+        &self.coeffs
+    }
+
+    /// Negacyclic convolution: self * rhs mod x^D + 1
+    pub fn mul(&self, rhs: &Self) -> Self {
+        let mut result = [F::ZERO; D];
+        for (i, a_coeff) in self.coeffs.iter().enumerate() {
+            for (j, b_coeff) in rhs.coeffs.iter().enumerate() {
+                let idx = (i + j) % D;
+                let sign = if i + j >= D { -F::ONE } else { F::ONE };
+                let mut term = *a_coeff;
+                term.mul_assign(b_coeff);
+                term.mul_assign(&sign);
+                result[idx].add_assign(&term);
             }
         }
-        Self(c)
+        Self { coeffs: result }
     }
 
     pub fn add(&self, rhs: &Self) -> Self {
-        // self を土台にして、各要素に rhs を加算
-        let mut c = self.0.clone(); // [F; D]: F は Clone（Field は Clone を継承）
-        for (ci, b) in c.iter_mut().zip(rhs.0.iter()) {
-            ci.add_assign(b); // *ci += *b
+        let mut c = self.coeffs;
+        for (ci, b) in c.iter_mut().zip(rhs.coeffs.iter()) {
+            ci.add_assign(b);
         }
-        Self(c)
-    }
-    /// negacyclic 用の循環行列（右回転で折り返した成分はマイナス）
-    /// 行 i は x^i * a (mod x^D + 1) に対応
-    pub fn rot(&self) -> [[F; D]; D] {
-        core::array::from_fn(|i| {
-            let i = i % D;
-            core::array::from_fn(|j| {
-                // 右回転の元インデックス
-                let idx = (j + D - i) % D;
-                let mut v = self.0[idx];
-                // 折り返し位置（j < i）だけ符号反転
-                if j < i {
-                    v = -v;
-                }
-                v
-            })
-        })
+        Self { coeffs: c }
     }
 
-    pub fn from_zq(zq: F) -> Self {
+    pub fn from_field_element(zq: F) -> Self {
         let bigint = zq.into_bigint();
-        let mut c: [F; D] = core::array::from_fn(|_| F::zero());
-
-        for (i, c) in c.iter_mut().enumerate() {
+        let mut coeffs = [F::ZERO; D];
+        for (i, coeff) in coeffs.iter_mut().enumerate() {
             if bigint.get_bit(i) {
-                *c = F::ONE;
+                *coeff = F::ONE;
             }
         }
+        Self { coeffs }
+    }
 
-        Self(c)
+    pub fn from_coeffs(coeffs: [F; D]) -> Self {
+        Self { coeffs }
     }
 
     pub fn reject_sampling(seed: &str, row: usize, column: usize) -> Self {
@@ -74,7 +71,6 @@ impl<F: PrimeField> Rq<F> {
 
         let mut column_vec = [F::ZERO; D];
         for element in column_vec.iter_mut() {
-            // Reject zero samples to avoid degenerate columns.
             let sampled = loop {
                 let candidate = F::rand(&mut rng);
                 if !candidate.is_zero() {
@@ -83,6 +79,48 @@ impl<F: PrimeField> Rq<F> {
             };
             *element = sampled;
         }
-        Self(column_vec)
+        Self { coeffs: column_vec }
+    }
+
+    pub fn rotation_block_from_seed(seed: &str) -> [Self; D] {
+        let mut hasher = Sha256::new();
+        hasher.update(seed.as_bytes());
+        let digest = hasher.finalize();
+        let mut rng_seed = [0u8; 32];
+        rng_seed.copy_from_slice(&digest);
+        let mut rng = StdRng::from_seed(rng_seed);
+
+        let mut base_column = [F::ZERO; D];
+        for coeff in base_column.iter_mut() {
+            let draw = rng.gen_range(0..4);
+            *coeff = match draw {
+                0 => -F::ONE,
+                1 => F::ZERO,
+                2 => F::ONE,
+                _ => F::from(2u64),
+            };
+        }
+        let rotations = Self::negacyclic_rot_block(&base_column);
+        core::array::from_fn(|idx| Self::from_coeffs(rotations[idx]))
+    }
+
+    pub fn negacyclic_rot_block(base_column: &[F; D]) -> [[F; D]; D] {
+        core::array::from_fn(|row_idx| {
+            core::array::from_fn(|col_idx| {
+                let offset =
+                    ((row_idx as isize - col_idx as isize).rem_euclid(D as isize)) as usize;
+                let mut value = base_column[offset];
+                if row_idx < col_idx {
+                    value = -value;
+                }
+                value
+            })
+        })
+    }
+}
+
+impl<F: PrimeField> Default for Rq<F> {
+    fn default() -> Self {
+        Self::zero()
     }
 }

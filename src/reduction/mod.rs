@@ -1,7 +1,7 @@
 use ark_ff::{Field, PrimeField};
 use itertools::Itertools;
 
-use crate::{D, K, MatrixCommitmentScheme, Rq, T};
+use crate::{D, K, M, MatrixCommitmentScheme, Rq, T};
 
 pub struct MCS<F: PrimeField> {
     c: Vec<Rq<F>>,
@@ -12,8 +12,8 @@ pub struct MCS<F: PrimeField> {
 pub struct ME<F: PrimeField> {
     c: Vec<Rq<F>>,
     z: Vec<Rq<F>>,
-    r: Vec<bool>,      // the size is log N, N is the number of constraints
-    y: Vec<[bool; D]>, // the size is t, which is number of CCS matrix
+    r: Vec<F>,      // the size is log N, N is the number of constraints
+    y: Vec<[F; D]>, // the size is t, which is number of CCS matrix
 }
 
 pub struct Reduction<F: PrimeField> {
@@ -27,11 +27,49 @@ impl<F: PrimeField> Reduction<F> {
         // setup
         let z_1 = [vec![F::ONE], mcs.x, mcs.w].concat();
         // 0,1ではない気がする。
-        let alpha: Vec<bool> = vec![]; // size log_d bool random vector
-        let beta: Vec<bool> = vec![]; // size log_dn bool random vector
-        let gamma: bool = true; // random 0 or 1
+        let alpha: Vec<F> = vec![]; // size log_d bool random vector
+        let beta: Vec<F> = vec![]; // size log_dn bool random vector
+        let gamma: F = F::from(11111); // random
+        let r = me[0].r.clone();
 
         // ccs_matrixとz_1とのMELのclosureを定義する。
+        let poly_f = self.poly_f(&z_1);
+
+        // ZのMLEを作る。
+        // n == m を仮定して良いらしい。つまり、制約数と変数の数が同じになって、Mが正方行列
+        let z1 = MatrixCommitmentScheme::bit_decompose_witness(&z_1);
+        let z: Vec<&[Rq<F>]> = std::iter::once(z1.as_slice())
+            .chain(me.iter().map(|me| me.z.as_slice()))
+            .collect();
+
+        let poly_nc = self.poly_nc(&z);
+
+        let poly_eval = self.poly_eval(alpha, r, &z);
+
+        // Q(X)
+        let log_d = D.ilog2() as usize;
+        let poly_q = |x: &[F]| {
+            eq(x, &beta)
+                * (poly_f(&x[log_d + 1..])
+                    + poly_nc
+                        .iter()
+                        .enumerate()
+                        .map(|(i, nc_i)| gamma.pow([(i + 1) as u64]) * nc_i(x))
+                        .sum::<F>())
+                + poly_eval
+                    .iter()
+                    .flatten()
+                    .enumerate()
+                    .map(|(i, eval)| gamma.pow([(K + i + 1) as u64]) * eval(x))
+                    .sum::<F>()
+        };
+
+        // Qの{0,1}^log_dn, n==m in this setting
+        let log_dn = (D * M).ilog2() as usize;
+        let t = all_bool_patterns(log_dn).map(|x| poly_q(&x)).sum::<F>();
+    }
+
+    pub fn poly_f(&self, z: &[F]) -> impl Fn(&[F]) -> F {
         // Σ M(x,y)*z(y)
         let mz = self
             .ccs_matrix
@@ -43,7 +81,7 @@ impl<F: PrimeField> Reduction<F> {
                         // 行と z の内積
                         row.iter()
                             .copied() // &F → F
-                            .zip(z_1.iter().copied()) // &F → F
+                            .zip(z.iter().copied()) // &F → F
                             .fold(F::ZERO, |acc, (a_ij, z_j)| acc + a_ij * z_j)
                     })
                     .collect();
@@ -51,31 +89,33 @@ impl<F: PrimeField> Reduction<F> {
                 mle_vector(u)
             })
             .collect::<Vec<_>>();
-        let f = move |x: &[F]| mz[0](x) * mz[1](x) - mz[2](x); // R1CS
+        move |x: &[F]| mz[0](x) * mz[1](x) - mz[2](x) // R1CS
+    }
 
-        // ZのMLEを作る。
-        // n == m を仮定して良いらしい。つまり、制約数と変数の数が同じになって、Mが正方行列
-        let z_1 = MatrixCommitmentScheme::bit_decompose_witness(&z_1);
-        let z_2_k: Vec<_> = me.iter().map(|me| me.z.as_slice()).collect();
-        let nc = std::iter::once(z_1.as_slice())
-            .chain(z_2_k.iter().copied())
+    pub fn poly_nc(&self, z: &Vec<&[Rq<F>]>) -> Vec<impl Fn(&[F]) -> F> {
+        z.iter()
             .map(|z_i| {
                 let z_i = z_i.iter().flat_map(|rq| *rq.coeffs()).collect();
                 let z_i = mle_vector(z_i);
-                let zero = F::ZERO;
-                let one = F::ONE;
                 let two = F::from(2);
                 move |x: &[F]| {
                     // b is 2 in the current setting
                     let v = z_i(x);
-                    (v - two) * (v - one) * (v + zero) * (v + one) * (v + two)
+                    (v - two) * (v - F::ONE) * v * (v + F::ONE) * (v + two)
                 }
-            });
+            })
+            .collect()
+    }
 
-        // rはMEの全てで同じ。
-        let alpha_and_r: Vec<F> = alpha.iter().chain(&me[0].r).map(|&b| F::from(b)).collect();
+    pub fn poly_eval(
+        &self,
+        alpha: Vec<F>,
+        r: Vec<F>,
+        z: &[&[Rq<F>]],
+    ) -> Vec<Vec<impl Fn(&[F]) -> F>> {
+        let alpha_and_r: Vec<F> = [alpha, r].concat();
         // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
-        let eval: Vec<Vec<_>> = z_2_k
+        let eval: Vec<Vec<_>> = z[1..]
             .iter() // z_2_k: Vec<Vec<Rq>> （Rq: .coeffs()->&[F; D]）
             .map(|z_i| {
                 // z_i: d×m 行列（各行は Rq で、長さ m = D の係数）
@@ -110,33 +150,7 @@ impl<F: PrimeField> Reduction<F> {
                     .collect()
             })
             .collect();
-
-        // Q(X)
-        let log_d = D.ilog2() as usize;
-        let q = |x: &[F]| {
-            // aaa
-            let beta: Vec<F> = beta.into_iter().map(|b| F::from(b)).collect();
-            let gamma = F::from(gamma);
-            eq(x, &beta) * f(&x[log_d + 1..])
-                + nc.into_iter()
-                    .enumerate()
-                    .map(|(i, nc_i)| gamma.pow([i as u64]) * nc_i(x))
-                    .sum::<F>()
-                + gamma.pow([K as u64])
-                    * eval
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, e)| {
-                            let i = i + 1; // iは2始まりなので
-                            e.into_iter()
-                                .enumerate()
-                                .map(|(j, eval)| {
-                                    gamma.pow([(i * (j - 1) * K - 1) as u64]) * eval(x)
-                                })
-                                .sum::<F>()
-                        })
-                        .sum::<F>()
-        };
+        eval
     }
 }
 
@@ -146,32 +160,6 @@ fn mle_vector<F: Field>(vector: Vec<F>) -> impl Fn(&[F]) -> F {
         (0..1 << x.len())
             .map(|idx| vector[idx] * eq(x, &bits(idx, x.len())))
             .fold(F::ZERO, |acc, x| acc + x)
-    }
-}
-
-fn mle_matrix<F: Field>(matrix: Vec<Vec<F>>) -> impl Fn(&[F], &[F]) -> F {
-    move |x: &[F], y: &[F]| {
-        let rows = 1 << x.len();
-        let cols = 1 << y.len();
-
-        assert_eq!(matrix.len(), rows, "row count must be 2^|x|");
-        assert!(!matrix.is_empty(), "matrix must be non-empty");
-        for r in &matrix {
-            assert_eq!(r.len(), cols, "col count must be 2^|y| for every row");
-        }
-
-        // ∑_{i,j} A[i][j] · eq(x, i_bits) · eq(y, j_bits)
-        (0..rows).fold(F::ZERO, |acc_rows, i| {
-            let wx = eq(x, &bits::<F>(i, x.len())); // 行の重み
-            let row = &matrix[i];
-
-            let inner = (0..cols).fold(F::ZERO, |acc_cols, j| {
-                let wy = eq(y, &bits::<F>(j, y.len())); // 列の重み
-                acc_cols + row[j] * wy
-            });
-
-            acc_rows + inner * wx
-        })
     }
 }
 
@@ -189,9 +177,9 @@ fn eq<F: Field>(x: &[F], e: &[F]) -> F {
         .fold(F::ONE, |acc, x| acc * x)
 }
 
-fn bool_patterns(n: usize) -> impl Iterator<Item = Vec<bool>> {
-    std::iter::repeat([false, true]) // ① [false,true] という“候補集合”を無限に繰り返すイテレータ
-        .take(n) // ② その先頭 n 個だけ取る → 「n つの軸」になる
-        .multi_cartesian_product() // ③ 直積をとる → 各軸から1つずつ選ぶ全組合せを生成
-        .map(|v| v) // ④ v は Vec<bool>（そのまま返すだけ）
+fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<F>> {
+    std::iter::repeat([false, true])
+        .take(n)
+        .multi_cartesian_product()
+        .map(|v| v.into_iter().map(|b| F::from(b)).collect())
 }

@@ -44,13 +44,13 @@ impl<F: PrimeField> Reduction<F> {
 
         let poly_nc = self.poly_nc(&z);
 
-        let poly_eval = self.poly_eval(alpha, r, &z);
+        let poly_eval = self.poly_eval(&alpha, &r, &z);
 
         // Q(X): eq(X, β) * (F(X[log_dn+1..]) + Σ γ^i+1 * nc_i(X)) + Σ γ^i+k+1.. * eval_i(X)
         let log_d = D.ilog2() as usize;
         let poly_q = |x: &[F]| {
             eq(x, &beta)
-                * (poly_f(&x[log_d + 1..])
+                * (poly_f(&x[log_d..])
                     + poly_nc
                         .iter()
                         .enumerate()
@@ -60,13 +60,29 @@ impl<F: PrimeField> Reduction<F> {
                     .iter()
                     .flatten()
                     .enumerate()
-                    .map(|(i, eval)| gamma.pow([(K + i + 1) as u64]) * eval(x))
+                    .map(|(i, eval_i)| gamma.pow([(K + i + 1) as u64]) * eval_i(x))
                     .sum::<F>()
         };
 
         // Qの{0,1}^log_dn, n==m in this setting
         let log_dn = (D * M).ilog2() as usize;
         let t = all_bool_patterns(log_dn).map(|x| poly_q(&x)).sum::<F>();
+
+        // T =
+        let poly_y: Vec<Vec<_>> = me
+            .iter()
+            .map(|me| {
+                me.y.iter()
+                    .map(|y| mle_vector(y.to_vec()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let t = poly_y
+            .iter()
+            .flatten()
+            .enumerate()
+            .map(|(i, y_i)| gamma.pow([(K + i + 1) as u64]) * y_i(&alpha))
+            .sum::<F>();
     }
 
     pub fn poly_f(&self, z: &[F]) -> impl Fn(&[F]) -> F {
@@ -109,11 +125,11 @@ impl<F: PrimeField> Reduction<F> {
 
     pub fn poly_eval(
         &self,
-        alpha: Vec<F>,
-        r: Vec<F>,
+        alpha: &Vec<F>,
+        r: &Vec<F>,
         z: &[&[Rq<F>]],
     ) -> Vec<Vec<impl Fn(&[F]) -> F>> {
-        let alpha_and_r: Vec<F> = [alpha, r].concat();
+        let alpha_and_r: Vec<F> = [alpha.clone(), r.clone()].concat();
         // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
         let eval: Vec<Vec<_>> = z[1..]
             .iter() // z_2_k: Vec<Vec<Rq>> （Rq: .coeffs()->&[F; D]）

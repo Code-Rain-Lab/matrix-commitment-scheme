@@ -9,5 +9,6 @@ ark-std = "0.5.0"
 sha2 = "0.10"
 ark-test-curves = { version = "0.5.0", features = ["bls12_381_scalar_field"] }
 rayon = "1.10"
+itertools = "0.14.0"
 
 [dev-dependencies]

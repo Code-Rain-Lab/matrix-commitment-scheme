@@ -2,16 +2,11 @@ use ark_ff::PrimeField;
 use core::marker::PhantomData;
 use rayon::prelude::*;
 
-use crate::{KAPPA, M, rq::Rq};
+use crate::{rq::Rq, KAPPA, M};
 
 pub struct MatrixCommitmentScheme<F: PrimeField> {
     seed: String,
     _marker: PhantomData<F>,
-}
-
-fn add_vectors<F: PrimeField>(lhs: &[Rq<F>], rhs: &[Rq<F>]) -> Vec<Rq<F>> {
-    assert_eq!(lhs.len(), rhs.len());
-    lhs.iter().zip(rhs.iter()).map(|(a, b)| a.add(b)).collect()
 }
 
 impl<F: PrimeField> MatrixCommitmentScheme<F> {
@@ -63,13 +58,19 @@ mod tests {
     pub struct FqConfig;
     pub type Fq = Fp64<MontBackend<FqConfig, 1>>;
 
+    fn add_vectors(lhs: &[Rq<Fq>], rhs: &[Rq<Fq>]) -> Vec<Rq<Fq>> {
+        assert_eq!(lhs.len(), rhs.len());
+        lhs.iter().zip(rhs.iter()).map(|(a, b)| a.add(b)).collect()
+    }
+
     #[test]
     pub fn random_linear_combination() {
         let mut rng = test_rng();
         let r = Rq::<Fq>::challenge("seed");
 
-        let a: Vec<Fq> = (0..M).map(|_| Fq::rand(&mut rng)).collect();
-        let b: Vec<Fq> = (0..M).map(|_| Fq::rand(&mut rng)).collect();
+        let witness_len = 32;
+        let a: Vec<Fq> = (0..witness_len).map(|_| Fq::rand(&mut rng)).collect();
+        let b: Vec<Fq> = (0..witness_len).map(|_| Fq::rand(&mut rng)).collect();
 
         let a = MatrixCommitmentScheme::bit_decompose_witness(&a);
         let b = MatrixCommitmentScheme::bit_decompose_witness(&b);

@@ -26,6 +26,7 @@ impl<F: PrimeField> Reduction<F> {
 
         // setup
         let z_1 = [vec![F::ONE], mcs.x, mcs.w].concat();
+        // 0,1ではない気がする。
         let alpha: Vec<bool> = vec![]; // size log_d bool random vector
         let beta: Vec<bool> = vec![]; // size log_dn bool random vector
         let gamma: bool = true; // random 0 or 1
@@ -71,7 +72,7 @@ impl<F: PrimeField> Reduction<F> {
                 }
             });
 
-        // rはmeの全てで同じ。
+        // rはMEの全てで同じ。
         let alpha_and_r: Vec<F> = alpha.iter().chain(&me[0].r).map(|&b| F::from(b)).collect();
         // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
         let eval: Vec<Vec<_>> = z_2_k
@@ -109,6 +110,33 @@ impl<F: PrimeField> Reduction<F> {
                     .collect()
             })
             .collect();
+
+        // Q(X)
+        let log_d = D.ilog2() as usize;
+        let q = |x: &[F]| {
+            // aaa
+            let beta: Vec<F> = beta.into_iter().map(|b| F::from(b)).collect();
+            let gamma = F::from(gamma);
+            eq(x, &beta) * f(&x[log_d + 1..])
+                + nc.into_iter()
+                    .enumerate()
+                    .map(|(i, nc_i)| gamma.pow([i as u64]) * nc_i(x))
+                    .sum::<F>()
+                + gamma.pow([K as u64])
+                    * eval
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, e)| {
+                            let i = i + 1; // iは2始まりなので
+                            e.into_iter()
+                                .enumerate()
+                                .map(|(j, eval)| {
+                                    gamma.pow([(i * (j - 1) * K - 1) as u64]) * eval(x)
+                                })
+                                .sum::<F>()
+                        })
+                        .sum::<F>()
+        };
     }
 }
 

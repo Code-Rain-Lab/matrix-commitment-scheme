@@ -55,20 +55,34 @@ impl<F: PrimeField> Reduction<F> {
         // ZのMLEを作る。
         // n == m を仮定して良いらしい。つまり、制約数と変数の数が同じになって、Mが正方行列
         let z_1 = MatrixCommitmentScheme::bit_decompose_witness(&z_1);
+        let z_2_k: Vec<_> = me.iter().map(|me| me.z.as_slice()).collect();
         let nc = std::iter::once(z_1.as_slice())
-            .chain(me.iter().map(|me| me.z.as_slice()))
+            .chain(z_2_k.iter().copied())
             .map(|z_i| {
                 let z_i = z_i.iter().flat_map(|rq| *rq.coeffs()).collect();
                 let z_i = mle_vector(z_i);
+                let zero = F::ZERO;
+                let one = F::ONE;
+                let two = F::from(2);
                 move |x: &[F]| {
-                    let v = z_i(x);
-                    let zero = F::ZERO;
-                    let one = F::ONE;
-                    let two = F::from(2);
                     // b is 2 in the current setting
+                    let v = z_i(x);
                     (v - two) * (v - one) * (v + zero) * (v + one) * (v + two)
                 }
             });
+        let eval = z_2_k.iter().map(|&z_i| {
+            self.ccs_matrix.map(|m_j| {
+                // aaa
+                let m_j_T = // m_jの転置
+                let zm = todo!(); // z_i * m_j_T
+                let zm = mle_vector(zm);
+
+                |x: &[F]| {
+                    // rはmeのの全てで同じ。
+                    eq(x, &[alpha, me[0].r].concat()) * zm(x)
+                }
+            })
+        });
     }
 }
 

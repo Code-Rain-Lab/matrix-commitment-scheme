@@ -46,7 +46,7 @@ impl<F: PrimeField> Reduction<F> {
 
         let poly_eval = self.poly_eval(alpha, r, &z);
 
-        // Q(X)
+        // Q(X): eq(X, β) * (F(X[log_dn+1..]) + Σ γ^i+1 * nc_i(X)) + Σ γ^i+k+1.. * eval_i(X)
         let log_d = D.ilog2() as usize;
         let poly_q = |x: &[F]| {
             eq(x, &beta)

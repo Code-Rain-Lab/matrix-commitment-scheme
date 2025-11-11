@@ -70,19 +70,45 @@ impl<F: PrimeField> Reduction<F> {
                     (v - two) * (v - one) * (v + zero) * (v + one) * (v + two)
                 }
             });
-        let eval = z_2_k.iter().map(|&z_i| {
-            self.ccs_matrix.map(|m_j| {
-                // aaa
-                let m_j_T = // m_jの転置
-                let zm = todo!(); // z_i * m_j_T
-                let zm = mle_vector(zm);
 
-                |x: &[F]| {
-                    // rはmeのの全てで同じ。
-                    eq(x, &[alpha, me[0].r].concat()) * zm(x)
-                }
+        // rはmeの全てで同じ。
+        let alpha_and_r: Vec<F> = alpha.iter().chain(&me[0].r).map(|&b| F::from(b)).collect();
+        // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
+        let eval: Vec<Vec<_>> = z_2_k
+            .iter() // z_2_k: Vec<Vec<Rq>> （Rq: .coeffs()->&[F; D]）
+            .map(|z_i| {
+                // z_i: d×m 行列（各行は Rq で、長さ m = D の係数）
+                // 行ごとの係数スライスにそろえる
+                let rows: Vec<&[F]> = z_i.iter().map(|rq| &rq.coeffs()[..]).collect();
+                let d = rows.len();
+                let m = rows.first().map(|r| r.len()).unwrap_or(0);
+
+                self.ccs_matrix
+                    .iter() // 各 m_j: n×m
+                    .map(|m_j| {
+                        let n = m_j.len();
+                        let mj_m = m_j.first().map(|row| row.len()).unwrap_or(0);
+                        assert!(d > 0 && n > 0, "empty matrix");
+                        assert_eq!(mj_m, m, "dimension mismatch: m_j cols vs z_i cols");
+
+                        // Z_i * M_j^T
+                        let mut zm_flat = Vec::with_capacity(d * n);
+                        for a in 0..d {
+                            for r in 0..n {
+                                let dot =
+                                    (0..m).fold(F::ZERO, |acc, c| acc + rows[a][c] * m_j[r][c]);
+                                zm_flat.push(dot);
+                            }
+                        }
+
+                        let zm_mle = mle_vector(zm_flat);
+                        let target = alpha_and_r.clone(); // 各クロージャへムーブ
+
+                        move |x: &[F]| eq(x, &target) * zm_mle(x)
+                    })
+                    .collect()
             })
-        });
+            .collect();
     }
 }
 

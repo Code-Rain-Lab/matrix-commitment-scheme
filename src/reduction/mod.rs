@@ -1,7 +1,8 @@
 use ark_ff::{Field, PrimeField};
+use ark_std::test_rng;
 use itertools::Itertools;
 
-use crate::{D, K, M, MatrixCommitmentScheme, Rq, T};
+use crate::{D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T};
 
 pub struct MCS<F: PrimeField> {
     c: Vec<Rq<F>>,
@@ -18,18 +19,20 @@ pub struct ME<F: PrimeField> {
 
 pub struct Reduction<F: PrimeField> {
     ccs_matrix: [Vec<Vec<F>>; T],
+    ccs_f: fn(&[F]) -> F,
 }
 
 impl<F: PrimeField> Reduction<F> {
     pub fn ccs_reduction(&self, mcs: MCS<F>, me: Vec<ME<F>>) {
         assert!(me.len() == K - 1);
 
+        let mut rng = test_rng();
+
         // setup
         let z_1 = [vec![F::ONE], mcs.x, mcs.w].concat();
-        // 0,1ではない気がする。
-        let alpha: Vec<F> = vec![]; // size log_d bool random vector
-        let beta: Vec<F> = vec![]; // size log_dn bool random vector
-        let gamma: F = F::from(11111); // random
+        let alpha: Vec<F> = (0..LOG_D).map(|_| F::rand(&mut rng)).collect();
+        let beta: Vec<F> = (0..LOG_DN).map(|_| F::rand(&mut rng)).collect();
+        let gamma: F = F::rand(&mut rng);
         let r = me[0].r.clone();
 
         // ccs_matrixとz_1とのMELのclosureを定義する。
@@ -37,20 +40,19 @@ impl<F: PrimeField> Reduction<F> {
 
         // ZのMLEを作る。
         // n == m を仮定して良いらしい。つまり、制約数と変数の数が同じになって、Mが正方行列
-        let z1 = MatrixCommitmentScheme::bit_decompose_witness(&z_1);
-        let z: Vec<&[Rq<F>]> = std::iter::once(z1.as_slice())
+        let z = MatrixCommitmentScheme::bit_decompose_witness(&z_1);
+        let z: Vec<&[Rq<F>]> = std::iter::once(z.as_slice())
             .chain(me.iter().map(|me| me.z.as_slice()))
             .collect();
 
         let poly_nc = self.poly_nc(&z);
-
-        let poly_eval = self.poly_eval(&alpha, &r, &z);
+        let zm = self.zm(&z);
+        let poly_eval = self.poly_eval(&alpha, &r, &zm);
 
         // Q(X): eq(X, β) * (F(X[log_dn+1..]) + Σ γ^i+1 * nc_i(X)) + Σ γ^i+k+1.. * eval_i(X)
-        let log_d = D.ilog2() as usize;
         let poly_q = |x: &[F]| {
             eq(x, &beta)
-                * (poly_f(&x[log_d..])
+                * (poly_f(&x[LOG_D..])
                     + poly_nc
                         .iter()
                         .enumerate()
@@ -63,10 +65,6 @@ impl<F: PrimeField> Reduction<F> {
                     .map(|(i, eval_i)| gamma.pow([(K + i + 1) as u64]) * eval_i(x))
                     .sum::<F>()
         };
-
-        // Qの{0,1}^log_dn, n==m in this setting
-        let log_dn = (D * M).ilog2() as usize;
-        let t = all_bool_patterns(log_dn).map(|x| poly_q(&x)).sum::<F>();
 
         // T =
         let poly_y: Vec<Vec<_>> = me
@@ -81,8 +79,72 @@ impl<F: PrimeField> Reduction<F> {
             .iter()
             .flatten()
             .enumerate()
-            .map(|(i, y_i)| gamma.pow([(K + i + 1) as u64]) * y_i(&alpha))
+            .map(|(i, y_i_j)| gamma.pow([(K + i + 1) as u64]) * y_i_j(&alpha))
             .sum::<F>();
+
+        // T == Qの{0,1}^log_dn, n==m in this setting
+        assert_eq!(t, all_bool_patterns(LOG_DN).map(|x| poly_q(&x)).sum::<F>());
+
+        // sum-check
+
+        let alpha_: Vec<F> = (0..LOG_D).map(|_| F::rand(&mut rng)).collect();
+        let r_: Vec<F> = (0..LOG_N).map(|_| F::rand(&mut rng)).collect();
+        let random_points = [alpha_, r_].concat();
+        let s: Vec<_> = (0..LOG_DN)
+            .map(|i| {
+                let s_i = |x_i: F| {
+                    all_bool_patterns::<F>(LOG_DN - i - 1)
+                        .map(|rest| {
+                            let mut x = Vec::with_capacity(LOG_DN);
+                            x.extend_from_slice(&random_points[..i]);
+                            x.push(x_i);
+                            x.extend(rest);
+                            poly_q(&x)
+                        })
+                        .sum::<F>()
+                };
+
+                // 係数を求める。
+                coeffs_from_evaluation(s_i(F::ZERO), s_i(F::ONE))
+            })
+            .collect();
+
+        // ---- Verify sum-check ----
+        // prev = Σ_{x∈{0,1}^m} Q(x)
+        let mut prev = t;
+
+        for (i, &[a, b]) in s.iter().enumerate() {
+            let g = move |x: F| a + b * x;
+            // 境界チェック: g(0)+g(1) == prev
+            let boundary = g(F::ZERO) + g(F::ONE);
+            assert_eq!(boundary, prev, "boundary check failed at round {}", i);
+
+            // 次の主張値へ更新: prev = g(r_i)
+            let r_i = random_points[i];
+            prev = g(r_i);
+        }
+
+        // 最終チェック: prev == Q(r_)
+        let q_at_random_points = poly_q(&random_points);
+        assert_eq!(prev, q_at_random_points, "final check failed");
+
+        // let hat_r_ =
+        let y_: Vec<Vec<_>> = zm
+            .iter()
+            .map(|zm_i| {
+                zm_i.iter()
+                    .map(|zm_i_j| {
+                        // aaa
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // todo
+        // - Tのチェック
+        // - poly_qのsum-check
+        // - r'で、y'などを生成
+        // - Vがそれらをチェック
     }
 
     pub fn poly_f(&self, z: &[F]) -> impl Fn(&[F]) -> F {
@@ -105,7 +167,11 @@ impl<F: PrimeField> Reduction<F> {
                 mle_vector(u)
             })
             .collect::<Vec<_>>();
-        move |x: &[F]| mz[0](x) * mz[1](x) - mz[2](x) // R1CS
+        // move |x: &[F]| mz[0](x) * mz[1](x) - mz[2](x) // R1CS
+        move |x: &[F]| {
+            let mz: Vec<_> = mz.iter().map(|mz_i| mz_i(x)).collect();
+            (self.ccs_f)(&mz)
+        }
     }
 
     pub fn poly_nc(&self, z: &Vec<&[Rq<F>]>) -> Vec<impl Fn(&[F]) -> F> {
@@ -123,16 +189,9 @@ impl<F: PrimeField> Reduction<F> {
             .collect()
     }
 
-    pub fn poly_eval(
-        &self,
-        alpha: &Vec<F>,
-        r: &Vec<F>,
-        z: &[&[Rq<F>]],
-    ) -> Vec<Vec<impl Fn(&[F]) -> F>> {
-        let alpha_and_r: Vec<F> = [alpha.clone(), r.clone()].concat();
-        // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
-        let eval: Vec<Vec<_>> = z[1..]
-            .iter() // z_2_k: Vec<Vec<Rq>> （Rq: .coeffs()->&[F; D]）
+    pub fn zm(&self, z: &[&[Rq<F>]]) -> Vec<Vec<Vec<Vec<F>>>> {
+        let zm: Vec<Vec<_>> = z
+            .iter()
             .map(|z_i| {
                 // z_i: d×m 行列（各行は Rq で、長さ m = D の係数）
                 // 行ごとの係数スライスにそろえる
@@ -149,19 +208,41 @@ impl<F: PrimeField> Reduction<F> {
                         assert_eq!(mj_m, m, "dimension mismatch: m_j cols vs z_i cols");
 
                         // Z_i * M_j^T
-                        let mut zm_flat = Vec::with_capacity(d * n);
-                        for a in 0..d {
-                            for r in 0..n {
-                                let dot =
-                                    (0..m).fold(F::ZERO, |acc, c| acc + rows[a][c] * m_j[r][c]);
-                                zm_flat.push(dot);
-                            }
-                        }
+                        let zm: Vec<Vec<_>> = (0..d)
+                            .map(|a| {
+                                (0..n)
+                                    .map(|r| {
+                                        (0..m).fold(F::ZERO, |acc, c| acc + rows[a][c] * m_j[r][c])
+                                    })
+                                    .collect()
+                            })
+                            .collect();
+                        zm
+                    })
+                    .collect()
+            })
+            .collect();
+        zm
+    }
 
-                        let zm_mle = mle_vector(zm_flat);
+    pub fn poly_eval(
+        &self,
+        alpha: &Vec<F>,
+        r: &Vec<F>,
+        zm: &Vec<Vec<Vec<Vec<F>>>>,
+        // z: &[&[Rq<F>]],
+    ) -> Vec<Vec<impl Fn(&[F]) -> F>> {
+        let alpha_and_r: Vec<F> = [alpha.clone(), r.clone()].concat();
+        // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
+        let eval: Vec<Vec<_>> = zm[1..]
+            .iter() // z_2_k: Vec<Vec<Rq>> （Rq: .coeffs()->&[F; D]）
+            .map(|zm_i| {
+                zm_i.iter()
+                    .map(|zm_i_j| {
+                        let zm_i_j: Vec<_> = zm_i_j.iter().flatten().copied().collect();
+                        let zm_i_j = mle_vector(zm_i_j);
                         let target = alpha_and_r.clone(); // 各クロージャへムーブ
-
-                        move |x: &[F]| eq(x, &target) * zm_mle(x)
+                        move |x: &[F]| eq(x, &target) * zm_i_j(x)
                     })
                     .collect()
             })
@@ -198,4 +279,11 @@ fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<F>> {
         .take(n)
         .multi_cartesian_product()
         .map(|v| v.into_iter().map(|b| F::from(b)).collect())
+}
+
+#[inline]
+pub fn coeffs_from_evaluation<F: Field>(eval_at_0: F, eval_at_1: F) -> [F; 2] {
+    let a = eval_at_0;
+    let b = eval_at_1 - eval_at_0;
+    [a, b]
 }

@@ -7,7 +7,10 @@ use ark_ff::{Field, Fp64, MontBackend};
 pub struct FqConfig;
 pub type Fq = Fp64<MontBackend<FqConfig, 1>>;
 
-use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use core::{
+    iter::Sum,
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 
 // Note: 回路側でも結局同じことを実装するので、arkworksの拡大体のライブラリは使わない。できるだけ実装は揃えたい。
 
@@ -37,6 +40,35 @@ impl<F: Field> Fq2<F> {
     #[inline]
     pub fn new(c0: F, c1: F) -> Self {
         Self { c0, c1 }
+    }
+
+    #[inline]
+    pub fn pow<T>(&self, exp: T) -> Self
+    where
+        T: AsRef<[u64]>,
+    {
+        self.pow_from_bits(exp.as_ref())
+    }
+
+    #[inline]
+    pub fn pow_u64(&self, exp: u64) -> Self {
+        self.pow([exp])
+    }
+
+    fn pow_from_bits(&self, bits: &[u64]) -> Self {
+        let mut acc = Self::one();
+        let mut base = *self;
+        for &word in bits.iter() {
+            let mut mask = word;
+            for _ in 0..64 {
+                if mask & 1 == 1 {
+                    acc *= base;
+                }
+                base *= base;
+                mask >>= 1;
+            }
+        }
+        acc
     }
 
     #[inline]
@@ -154,6 +186,18 @@ impl<F: Field> MulAssign<F> for Fq2<F> {
     }
 }
 
+impl<F: Field> Sum for Fq2<F> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), |acc, value| acc + value)
+    }
+}
+
+impl<'a, F: Field> Sum<&'a Fq2<F>> for Fq2<F> {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), |acc, value| acc + *value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +255,31 @@ mod tests {
             let check = candidate * inv;
             assert_eq!(check, Fq2::one());
         }
+    }
+
+    #[test]
+    fn fq2_pow_matches_repeated_mul() {
+        let mut rng = test_rng();
+        let base = Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng));
+        let mut manual = Fq2::one();
+        for _ in 0..5 {
+            manual *= base;
+        }
+        assert_eq!(base.pow_u64(5), manual);
+        assert_eq!(base.pow_u64(0), Fq2::one());
+        assert_eq!(base.pow_u64(1), base);
+    }
+
+    #[test]
+    fn fq2_sum_trait_accumulates() {
+        let mut rng = test_rng();
+        let values: Vec<_> = (0..16)
+            .map(|_| Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng)))
+            .collect();
+        let iter_sum: Fq2<Fq> = values.clone().into_iter().sum();
+        let manual = values
+            .iter()
+            .fold(Fq2::zero(), |acc, value| acc + *value);
+        assert_eq!(iter_sum, manual);
     }
 }

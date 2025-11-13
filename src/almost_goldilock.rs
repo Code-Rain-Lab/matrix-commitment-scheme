@@ -9,6 +9,8 @@ pub type Fq = Fp64<MontBackend<FqConfig, 1>>;
 
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
+// Note: 回路側でも結局同じことを実装するので、arkworksの拡大体のライブラリは使わない。できるだけ実装は揃えたい。
+
 /// x = c0 + c1 * u, where u^2 = 3 (Δ = 3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fq2<F: Field> {
@@ -149,5 +151,65 @@ impl<F: Field> MulAssign<F> for Fq2<F> {
     fn mul_assign(&mut self, s: F) {
         self.c0 *= s;
         self.c1 *= s;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_ff::UniformRand;
+    use ark_std::test_rng;
+
+    #[test]
+    fn fq2_add_sub_roundtrip() {
+        let mut rng = test_rng();
+        let a = Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng));
+        let b = Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng));
+
+        let sum = a + b;
+        let diff = sum - b;
+        assert_eq!(diff, a);
+
+        let mut assign_sum = a;
+        assign_sum += b;
+        assert_eq!(assign_sum, sum);
+    }
+
+    #[test]
+    fn fq2_mul_matches_formula() {
+        let mut rng = test_rng();
+        let a = Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng));
+        let b = Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng));
+
+        let prod = a * b;
+
+        let expected = {
+            let (ac, bd) = (a.c0 * b.c0, a.c1 * b.c1);
+            let three_bd = bd + bd + bd;
+            let c0 = ac + three_bd;
+            let c1 = (a.c0 + a.c1) * (b.c0 + b.c1) - ac - bd;
+            Fq2::new(c0, c1)
+        };
+        assert_eq!(prod, expected);
+
+        let mut assign = a;
+        assign *= b;
+        assert_eq!(assign, prod);
+    }
+
+    #[test]
+    fn fq2_inverse_exists_for_nonzero() {
+        let mut rng = test_rng();
+        for _ in 0..32 {
+            let candidate = loop {
+                let a = Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng));
+                if a != Fq2::zero() {
+                    break a;
+                }
+            };
+            let inv = candidate.inv().expect("inverse should exist");
+            let check = candidate * inv;
+            assert_eq!(check, Fq2::one());
+        }
     }
 }

@@ -2,7 +2,10 @@ use ark_ff::{Field, PrimeField};
 use ark_std::test_rng;
 use itertools::Itertools;
 
-use crate::{D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T};
+use crate::{
+    D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
+    almost_goldilock::{Fq, Fq2},
+};
 
 pub struct MCS<F: PrimeField> {
     c: Vec<Rq<F>>,
@@ -13,13 +16,13 @@ pub struct MCS<F: PrimeField> {
 pub struct ME<F: PrimeField> {
     c: Vec<Rq<F>>,
     z: Vec<Rq<F>>,
-    r: Vec<F>,      // the size is log N, N is the number of constraints
-    y: Vec<[F; D]>, // the size is t, which is number of CCS matrix
+    r: Vec<Fq2<F>>,      // the size is log N, N is the number of constraints
+    y: Vec<[Fq2<F>; D]>, // the size is t, which is number of CCS matrix
 }
 
 pub struct Reduction<F: PrimeField> {
     ccs_matrix: [Vec<Vec<F>>; T],
-    ccs_f: fn(&[F]) -> F,
+    ccs_f: fn(&[Fq2<F>]) -> Fq2<F>,
 }
 
 impl<F: PrimeField> Reduction<F> {
@@ -30,9 +33,14 @@ impl<F: PrimeField> Reduction<F> {
 
         // setup
         let z_1 = [vec![F::ONE], mcs.x, mcs.w].concat();
-        let alpha: Vec<F> = (0..LOG_D).map(|_| F::rand(&mut rng)).collect();
-        let beta: Vec<F> = (0..LOG_DN).map(|_| F::rand(&mut rng)).collect();
-        let gamma: F = F::rand(&mut rng);
+        //todo:  拡大体じゃないといけないっぽい
+        let alpha: Vec<Fq2<F>> = (0..LOG_D)
+            .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
+            .collect();
+        let beta: Vec<Fq2<F>> = (0..LOG_DN)
+            .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
+            .collect();
+        let gamma: Fq2<F> = Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng));
         let r = me[0].r.clone();
 
         // ccs_matrixとz_1とのMELのclosureを定義する。
@@ -50,7 +58,7 @@ impl<F: PrimeField> Reduction<F> {
         let poly_eval = self.poly_eval(&alpha, &r, &zm);
 
         // Q(X): eq(X, β) * (F(X[log_dn+1..]) + Σ γ^i+1 * nc_i(X)) + Σ γ^i+k+1.. * eval_i(X)
-        let poly_q = |x: &[F]| {
+        let poly_q = |x: &[Fq2<F>]| {
             eq(x, &beta)
                 * (poly_f(&x[LOG_D..])
                     + poly_nc
@@ -147,13 +155,13 @@ impl<F: PrimeField> Reduction<F> {
         // - Vがそれらをチェック
     }
 
-    pub fn poly_f(&self, z: &[F]) -> impl Fn(&[F]) -> F {
+    pub fn poly_f(&self, z: &[F]) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
         // Σ M(x,y)*z(y)
         let mz = self
             .ccs_matrix
             .iter()
             .map(|matrix| {
-                let u: Vec<F> = matrix
+                let u: Vec<Fq2<F>> = matrix
                     .iter() // &Vec<Vec<F>> → &Vec<F>
                     .map(|row| {
                         // 行と z の内積
@@ -162,28 +170,34 @@ impl<F: PrimeField> Reduction<F> {
                             .zip(z.iter().copied()) // &F → F
                             .fold(F::ZERO, |acc, (a_ij, z_j)| acc + a_ij * z_j)
                     })
+                    .map(|v| Fq2::<F>::new(v, F::ZERO))
                     .collect();
 
                 mle_vector(u)
             })
             .collect::<Vec<_>>();
         // move |x: &[F]| mz[0](x) * mz[1](x) - mz[2](x) // R1CS
-        move |x: &[F]| {
+        move |x: &[Fq2<F>]| {
             let mz: Vec<_> = mz.iter().map(|mz_i| mz_i(x)).collect();
             (self.ccs_f)(&mz)
         }
     }
 
-    pub fn poly_nc(&self, z: &Vec<&[Rq<F>]>) -> Vec<impl Fn(&[F]) -> F> {
+    pub fn poly_nc(&self, z: &Vec<&[Rq<F>]>) -> Vec<impl Fn(&[Fq2<F>]) -> Fq2<F>> {
         z.iter()
             .map(|z_i| {
-                let z_i = z_i.iter().flat_map(|rq| *rq.coeffs()).collect();
+                let z_i = z_i
+                    .iter()
+                    .flat_map(|rq| *rq.coeffs())
+                    .map(|v| Fq2::<F>::new(v, F::ZERO))
+                    .collect();
                 let z_i = mle_vector(z_i);
-                let two = F::from(2);
-                move |x: &[F]| {
+                let one = Fq2::<F>::one();
+                let two = one + one;
+                move |x: &[Fq2<F>]| {
                     // b is 2 in the current setting
                     let v = z_i(x);
-                    (v - two) * (v - F::ONE) * v * (v + F::ONE) * (v + two)
+                    (v - two) * (v - one) * v * (v + one) * (v + two)
                 }
             })
             .collect()
@@ -227,22 +241,27 @@ impl<F: PrimeField> Reduction<F> {
 
     pub fn poly_eval(
         &self,
-        alpha: &Vec<F>,
-        r: &Vec<F>,
+        alpha: &Vec<Fq2<F>>,
+        r: &Vec<Fq2<F>>,
         zm: &Vec<Vec<Vec<Vec<F>>>>,
         // z: &[&[Rq<F>]],
-    ) -> Vec<Vec<impl Fn(&[F]) -> F>> {
-        let alpha_and_r: Vec<F> = [alpha.clone(), r.clone()].concat();
+    ) -> Vec<Vec<impl Fn(&[Fq2<F>]) -> Fq2<F>>> {
+        let alpha_and_r: Vec<Fq2<F>> = [alpha.clone(), r.clone()].concat();
         // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
         let eval: Vec<Vec<_>> = zm[1..]
             .iter() // z_2_k: Vec<Vec<Rq>> （Rq: .coeffs()->&[F; D]）
             .map(|zm_i| {
                 zm_i.iter()
                     .map(|zm_i_j| {
-                        let zm_i_j: Vec<_> = zm_i_j.iter().flatten().copied().collect();
+                        let zm_i_j: Vec<_> = zm_i_j
+                            .iter()
+                            .flatten()
+                            .copied()
+                            .map(|v| Fq2::<F>::new(v, F::ZERO))
+                            .collect();
                         let zm_i_j = mle_vector(zm_i_j);
                         let target = alpha_and_r.clone(); // 各クロージャへムーブ
-                        move |x: &[F]| eq(x, &target) * zm_i_j(x)
+                        move |x: &[Fq2<F>]| eq(x, &target) * zm_i_j(x)
                     })
                     .collect()
             })
@@ -251,27 +270,28 @@ impl<F: PrimeField> Reduction<F> {
     }
 }
 
-fn mle_vector<F: Field>(vector: Vec<F>) -> impl Fn(&[F]) -> F {
-    move |x: &[F]| {
+fn mle_vector<F: Field>(vector: Vec<Fq2<F>>) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
+    move |x: &[Fq2<F>]| {
         assert_eq!(vector.len(), 1 << x.len());
         (0..1 << x.len())
             .map(|idx| vector[idx] * eq(x, &bits(idx, x.len())))
-            .fold(F::ZERO, |acc, x| acc + x)
+            .fold(Fq2::<F>::one(), |acc, x| acc + x)
     }
 }
 
-fn bits<F: Field>(v: usize, len: usize) -> Vec<F> {
+fn bits<F: Field>(v: usize, len: usize) -> Vec<Fq2<F>> {
     (0..len)
-        .map(|i| F::from(((v >> i) & 1) == 1)) // 下位ビットから
+        .map(|i| Fq2::<F>::new(F::from(((v >> i) & 1) == 1), F::ZERO)) // 下位ビットから
         .collect()
 }
 
-fn eq<F: Field>(x: &[F], e: &[F]) -> F {
+fn eq<F: Field>(x: &[Fq2<F>], e: &[Fq2<F>]) -> Fq2<F> {
     assert!(x.len() == e.len());
+    let one = Fq2::<F>::one();
     x.iter()
         .zip(e)
-        .map(|(x_i, e_i)| *e_i * *x_i + (F::ONE - x_i) * (F::ONE - e_i))
-        .fold(F::ONE, |acc, x| acc * x)
+        .map(|(x_i, e_i)| *e_i * *x_i + (one - *x_i) * (one - *e_i))
+        .fold(one, |acc, x| acc * x)
 }
 
 fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<F>> {

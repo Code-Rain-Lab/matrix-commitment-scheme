@@ -1,3 +1,4 @@
+pub mod almost_goldilock;
 pub mod commit;
 pub mod reduction;
 pub mod rq;

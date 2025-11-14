@@ -21,6 +21,44 @@ pub struct Fq2<F: Field> {
     pub c1: F,
 }
 
+impl<F: Field> From<F> for Fq2<F> {
+    fn from(value: F) -> Self {
+        Self::new(value, F::ZERO)
+    }
+}
+
+// impl<F: Field> Zero for Fq2<F> {
+//     #[inline]
+//     fn zero() -> Self {
+//         // 既存の固有メソッドをそのまま利用
+//         Self::zero()
+//     }
+//     #[inline]
+//     fn is_zero(&self) -> bool {
+//         self.c0.is_zero() && self.c1.is_zero()
+//     }
+//     #[inline]
+//     fn set_zero(&mut self) {
+//         self.c0 = F::zero();
+//         self.c1 = F::zero();
+//     }
+// }
+//
+// impl<F: Field> One for Fq2<F> {
+//     #[inline]
+//     fn one() -> Self {
+//         // 既存の固有メソッドをそのまま利用
+//         Self::one()
+//     }
+//
+//     // num-traits には `is_one` のデフォルト実装があります（PartialEqがあれば可）。
+//     // 明示的に最適化したいなら実装してもOK：
+//     #[inline]
+//     fn is_one(&self) -> bool {
+//         self.c1.is_zero() && self.c0.is_one()
+//     }
+// }
+
 impl<F: Field> Fq2<F> {
     #[inline]
     pub fn zero() -> Self {
@@ -277,9 +315,7 @@ mod tests {
             .map(|_| Fq2::new(Fq::rand(&mut rng), Fq::rand(&mut rng)))
             .collect();
         let iter_sum: Fq2<Fq> = values.clone().into_iter().sum();
-        let manual = values
-            .iter()
-            .fold(Fq2::zero(), |acc, value| acc + *value);
+        let manual = values.iter().fold(Fq2::zero(), |acc, value| acc + *value);
         assert_eq!(iter_sum, manual);
     }
 }

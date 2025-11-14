@@ -320,6 +320,7 @@ dependencies = [
  "ark-std",
  "ark-test-curves",
  "itertools 0.14.0",
+ "num-traits",
  "rayon",
  "sha2",
 ]

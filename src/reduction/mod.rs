@@ -1,5 +1,10 @@
-use ark_ff::{Field, PrimeField};
-use ark_std::test_rng;
+use std::{iter, marker::PhantomData};
+
+use ark_ff::{Field, PrimeField, UniformRand};
+use ark_std::{
+    rand::{self, SeedableRng, rngs::StdRng},
+    test_rng,
+};
 use itertools::Itertools;
 
 use crate::{
@@ -14,10 +19,10 @@ pub struct MCS<F: PrimeField> {
 }
 
 pub struct ME<F: PrimeField> {
-    c: Vec<Rq<F>>,
-    z: Vec<Rq<F>>,
-    r: Vec<Fq2<F>>,      // the size is log N, N is the number of constraints
-    y: Vec<[Fq2<F>; D]>, // the size is t, which is number of CCS matrix
+    c: Vec<Vec<Rq<F>>>,
+    z: Vec<Vec<Rq<F>>>,
+    r: Vec<Fq2<F>>,           // the size is log N, N is the number of constraints
+    y: Vec<Vec<Vec<Fq2<F>>>>, // the size is t, which is number of CCS matrix
 }
 
 pub struct Reduction<F: PrimeField> {
@@ -26,96 +31,68 @@ pub struct Reduction<F: PrimeField> {
 }
 
 impl<F: PrimeField> Reduction<F> {
-    pub fn ccs_reduction(&self, mcs: MCS<F>, me: Vec<ME<F>>) {
-        assert!(me.len() == K - 1);
-
-        let mut rng = test_rng();
+    pub fn prove_ccs_reduction(&self, mcs: MCS<F>, me: ME<F>) -> (ME<F>, Vec<[Fq2<F>; 2]>) {
+        let ME {
+            z: z_1_to_k,
+            c: c_1_to_k,
+            y: _y_1_to_k,
+            r,
+        } = me;
 
         // setup
-        let z_1 = [vec![F::ONE], mcs.x, mcs.w].concat();
-        let alpha: Vec<Fq2<F>> = (0..LOG_D)
-            .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
-            .collect();
-        let beta: Vec<Fq2<F>> = (0..LOG_DN)
-            .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
-            .collect();
-        let gamma: Fq2<F> = Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng));
-        let r = me[0].r.clone();
+        let mut transcript = Transcript::new("somthing seeed");
+        let alpha = transcript.get_vec(LOG_D);
+        let beta = transcript.get_vec(LOG_DN);
+        let gamma = transcript.get();
+        let sumcheck_challenge: Vec<Fq2<F>> = [alpha.clone(), r.clone()].concat();
 
-        // ccs_matrixとz_1とのMELのclosureを定義する。
-        let poly_f = self.poly_f(&z_1);
+        let w = [vec![F::ONE], mcs.x, mcs.w].concat();
 
-        // ZのMLEを作る。
+        let z_0 = MatrixCommitmentScheme::bit_decompose_witness(&w);
+        let z_all = [vec![z_0], z_1_to_k].concat();
+        let c_all = [vec![mcs.c], c_1_to_k].concat();
+
+        let poly_f = self.poly_f(&w);
+
         // n == m を仮定して良いらしい。つまり、制約数と変数の数が同じになって、Mが正方行列
-        let z = MatrixCommitmentScheme::bit_decompose_witness(&z_1);
-        let z: Vec<&[Rq<F>]> = std::iter::once(z.as_slice())
-            .chain(me.iter().map(|me| me.z.as_slice()))
+
+        let poly_nc: Vec<_> = z_all.iter().map(|z_i| self.poly_nc_i(z_i)).collect();
+        let zm_all = self.mul_transposed_m(&z_all);
+        let poly_eval: Vec<_> = zm_all[1..]
+            .iter()
+            .flat_map(|zm_i| {
+                zm_i.iter()
+                    .map(|zm_i_j| self.poly_eval_i_j(zm_i_j, &sumcheck_challenge))
+            })
             .collect();
 
-        let poly_nc = self.poly_nc(&z);
-        let zm = self.zm(&z);
-        let poly_eval = self.poly_eval(&alpha, &r, &zm);
-
-        // Q(X): eq(X, β) * (F(X[log_dn+1..]) + Σ γ^i+1 * nc_i(X)) + Σ γ^i+k+1.. * eval_i(X)
-        let mut gamma_pow_of_i = [gamma];
-        // この辺り、長さ間違えてそう
-        for i in 1..K * T {
-            gamma_pow_of_i[i] = gamma_pow_of_i[i - 1] * gamma;
-        }
+        // Q(X): eq(X, β) * {F(X[log_dn+1..]) + Σ γ^i+1 * nc_i(X)} + Σ γ^i+k+1.. * eval_i_j(X)
         let poly_q = |x: &[Fq2<F>]| {
+            let mut pow = powers_of(gamma);
+            pow.next(); // γ^0は使わない。
             eq(x, &beta)
                 * (poly_f(&x[LOG_D..])
                     + poly_nc
                         .iter()
-                        .enumerate()
-                        .map(|(i, nc_i)| gamma_pow_of_i[i + 1] * nc_i(x))
-                        .sum::<Fq2<F>>())
+                        .zip(pow.by_ref())
+                        .map(|(nc_i, pow)| pow * nc_i(x))
+                        .sum())
                 + poly_eval
                     .iter()
-                    .flatten()
-                    .enumerate()
-                    .map(|(i, eval_i)| gamma_pow_of_i[K + i + 1] * eval_i(x))
-                    .sum::<Fq2<F>>()
+                    .zip(pow.by_ref())
+                    .map(|(eval_i_j, pow)| pow * eval_i_j(x))
+                    .sum()
         };
 
-        // T =
-        let poly_y: Vec<Vec<_>> = me
-            .iter()
-            .map(|me| {
-                me.y.iter()
-                    .map(|y| mle_vector(y.to_vec()))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        let t = poly_y
-            .iter()
-            .flatten()
-            .enumerate()
-            .map(|(i, y_i_j)| gamma_pow_of_i[K + i + 1] * y_i_j(&alpha))
-            .sum::<Fq2<F>>();
-
-        // T == Qの{0,1}^log_dn, n==m in this setting
-        // assert_eq!(t, all_bool_patterns(LOG_DN).map(|x| poly_q(&x)).sum::<F>());
-
-        // sum-check
-
-        let alpha_: Vec<Fq2<F>> = (0..LOG_D)
-            .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
-            .collect();
-        let r_: Vec<Fq2<F>> = (0..LOG_N)
-            .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
-            .collect();
-        let r_hat = r_hat(&r_);
-        let random_points = [alpha_, r_].concat();
+        // SumCheck proof
+        // sent by Verifier
+        let sumcheck_challenge = transcript.get_vec(LOG_DN);
         let s: Vec<_> = (0..LOG_DN)
             .map(|i| {
                 let s_i = |x_i: Fq2<F>| {
                     all_bool_patterns::<F>(LOG_DN - i - 1)
                         .map(|rest| {
-                            let mut x = Vec::with_capacity(LOG_DN);
-                            x.extend_from_slice(&random_points[..i]);
-                            x.push(x_i);
-                            x.extend(rest);
+                            let x = [&sumcheck_challenge[..i], &[x_i], &rest].concat();
                             poly_q(&x)
                         })
                         .sum::<Fq2<F>>()
@@ -126,26 +103,10 @@ impl<F: PrimeField> Reduction<F> {
             })
             .collect();
 
-        // ---- Verify sum-check ----
-        // prev = Σ_{x∈{0,1}^m} Q(x)
-        let mut prev = t;
-
-        for (i, &[a, b]) in s.iter().enumerate() {
-            let g = move |x: Fq2<F>| a + b * x;
-            // 境界チェック: g(0)+g(1) == prev
-            let boundary = g(Fq2::<F>::zero()) + g(Fq2::<F>::one());
-            assert_eq!(boundary, prev, "boundary check failed at round {}", i);
-
-            // 次の主張値へ更新: prev = g(r_i)
-            let r_i = random_points[i];
-            prev = g(r_i);
-        }
-
-        // 最終チェック: prev == Q(r_)
-        let q_at_random_points = poly_q(&random_points);
-        assert_eq!(prev, q_at_random_points, "final check failed");
-
-        let y_: Vec<Vec<_>> = zm
+        // y' = ZM^T r^ を求める
+        let r_ = &sumcheck_challenge[LOG_D..];
+        let r_hat = r_hat(r_);
+        let y_all: Vec<Vec<Vec<_>>> = zm_all
             .iter()
             .map(|zm_i| {
                 zm_i.iter()
@@ -156,41 +117,89 @@ impl<F: PrimeField> Reduction<F> {
                             .map(|row| {
                                 row.iter()
                                     .zip(r_hat.iter())
-                                    .map(|(a, b)| *b * *a) // Fq2 * F
+                                    .map(|(&a, &b)| b * a)
                                     .sum::<Fq2<F>>()
                             })
-                            .collect::<Vec<Fq2<F>>>()
+                            .collect()
                     })
                     .collect()
             })
             .collect();
 
-        // Verify
-        let poly_y_: Vec<Vec<_>> = y_
-            .clone()
-            .into_iter()
-            .map(|y_i| y_i.into_iter().map(|y_i_j| mle_vector(y_i_j)).collect())
-            .collect();
+        (
+            ME {
+                c: c_all,
+                z: z_all.clone(),
+                y: y_all,
+                r: r_.to_vec(),
+            },
+            s,
+        )
+    }
 
-        let one = Fq2::<F>::one();
-        let b = one + one;
-        let mut b_pow_of_i = [one];
-        for i in 1..D {
-            b_pow_of_i[i] = b_pow_of_i[i - 1] * b;
-        }
-        let m_0: Vec<_> = y_[0]
-            .clone()
-            .into_iter()
-            .map(|y_0_j| {
-                y_0_j
-                    .into_iter()
-                    .enumerate()
-                    .map(|(l, y_0_j_l)| b_pow_of_i[l] * y_0_j_l)
-                    .sum::<Fq2<F>>()
-            })
-            .collect();
-
-        let f = (self.ccs_f)(&m_0);
+    pub fn verify(&self, mcs: MCS<F>, me: ME<F>, me_: ME<F>, s: Vec<[Fq2<F>; 2]>) {
+        // // Verifierがこれを計算する
+        // // T =
+        // let gamma_pow_of_i: Vec<Fq2<F>> = vec![]; // todo
+        // let poly_y: Vec<Vec<_>> = y_1_to_k
+        //     .iter()
+        //     .map(|y_i| y_i.iter().map(|y| mle(y.to_vec())).collect::<Vec<_>>())
+        //     .collect();
+        // let t = poly_y
+        //     .iter()
+        //     .flatten()
+        //     .enumerate()
+        //     .map(|(i, y_i_j)| gamma_pow_of_i[K + i + 1] * y_i_j(&alpha))
+        //     .sum::<Fq2<F>>();
+        //
+        // // T == Qの{0,1}^log_dn, n==m in this setting
+        // // assert_eq!(t, all_bool_patterns(LOG_DN).map(|x| poly_q(&x)).sum::<F>());
+        //
+        // // ---- Verify sum-check ----
+        // // prev = Σ_{x∈{0,1}^m} Q(x)
+        // let mut prev = t;
+        //
+        // for (i, &[a, b]) in s.iter().enumerate() {
+        //     let g = move |x: Fq2<F>| a + b * x;
+        //     // 境界チェック: g(0)+g(1) == prev
+        //     let boundary = g(Fq2::<F>::zero()) + g(Fq2::<F>::one());
+        //     assert_eq!(boundary, prev, "boundary check failed at round {}", i);
+        //
+        //     // 次の主張値へ更新: prev = g(r_i)
+        //     let r_i = sumcheck_challenge[i];
+        //     prev = g(r_i);
+        // }
+        //
+        // // 最終チェック: prev == Q(r_)
+        // let q_at_random_points = poly_q(&sumcheck_challenge);
+        // assert_eq!(prev, q_at_random_points, "final check failed");
+        //
+        // // Verify
+        // let poly_y_: Vec<Vec<_>> = y_
+        //     .clone()
+        //     .into_iter()
+        //     .map(|y_i| y_i.into_iter().map(|y_i_j| mle(y_i_j)).collect())
+        //     .collect();
+        //
+        // let one = Fq2::<F>::one();
+        // let b = one + one;
+        // let mut b_pow_of_i = [one];
+        // for i in 1..D {
+        //     b_pow_of_i[i] = b_pow_of_i[i - 1] * b;
+        // }
+        // let m_0: Vec<_> = y_[0]
+        //     .clone()
+        //     .into_iter()
+        //     .map(|y_0_j| {
+        //         y_0_j
+        //             .into_iter()
+        //             .enumerate()
+        //             .map(|(l, y_0_j_l)| b_pow_of_i[l] * y_0_j_l)
+        //             .sum::<Fq2<F>>()
+        //     })
+        //     .collect();
+        //
+        // let f = (self.ccs_f)(&m_0);
 
         // todo
         // - r'で、y'などを生成
@@ -215,7 +224,7 @@ impl<F: PrimeField> Reduction<F> {
                     .map(|v| Fq2::<F>::new(v, F::ZERO))
                     .collect();
 
-                mle_vector(u)
+                mle(u)
             })
             .collect::<Vec<_>>();
         // move |x: &[F]| mz[0](x) * mz[1](x) - mz[2](x) // R1CS
@@ -225,27 +234,33 @@ impl<F: PrimeField> Reduction<F> {
         }
     }
 
-    pub fn poly_nc(&self, z: &Vec<&[Rq<F>]>) -> Vec<impl Fn(&[Fq2<F>]) -> Fq2<F>> {
-        z.iter()
-            .map(|z_i| {
-                let z_i = z_i
-                    .iter()
-                    .flat_map(|rq| *rq.coeffs())
-                    .map(|v| Fq2::<F>::new(v, F::ZERO))
-                    .collect();
-                let z_i = mle_vector(z_i);
-                let one = Fq2::<F>::one();
-                let two = one + one;
-                move |x: &[Fq2<F>]| {
-                    // b is 2 in the current setting
-                    let v = z_i(x);
-                    (v - two) * (v - one) * v * (v + one) * (v + two)
-                }
-            })
-            .collect()
+    pub fn poly_nc_i(&self, z: &[Rq<F>]) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
+        let flat = z
+            .iter()
+            .flat_map(|rq| rq.coeffs().to_vec())
+            .map(|v| v.into())
+            .collect();
+        let mle = mle(flat);
+        let one = Fq2::<F>::one();
+        let two = one + one;
+        move |x: &[Fq2<F>]| {
+            // b is 2 in the current setting
+            let v = mle(x);
+            (v - two) * (v - one) * v * (v + one) * (v + two)
+        }
     }
 
-    pub fn zm(&self, z: &[&[Rq<F>]]) -> Vec<Vec<Vec<Vec<F>>>> {
+    pub fn poly_eval_i_j(
+        &self,
+        matrix: &[Vec<Fq2<F>>],
+        e: &[Fq2<F>],
+    ) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
+        let vector: Vec<_> = matrix.iter().flatten().cloned().collect();
+        let mle = mle(vector);
+        move |x: &[Fq2<F>]| eq(x, e) * mle(x)
+    }
+
+    pub fn mul_transposed_m(&self, z: &[Vec<Rq<F>>]) -> Vec<Vec<Vec<Vec<Fq2<F>>>>> {
         let zm: Vec<Vec<_>> = z
             .iter()
             .map(|z_i| {
@@ -270,6 +285,7 @@ impl<F: PrimeField> Reduction<F> {
                                     .map(|r| {
                                         (0..m).fold(F::ZERO, |acc, c| acc + rows[a][c] * m_j[r][c])
                                     })
+                                    .map(|v| v.into())
                                     .collect()
                             })
                             .collect();
@@ -280,39 +296,9 @@ impl<F: PrimeField> Reduction<F> {
             .collect();
         zm
     }
-
-    pub fn poly_eval(
-        &self,
-        alpha: &Vec<Fq2<F>>,
-        r: &Vec<Fq2<F>>,
-        zm: &Vec<Vec<Vec<Vec<F>>>>,
-        // z: &[&[Rq<F>]],
-    ) -> Vec<Vec<impl Fn(&[Fq2<F>]) -> Fq2<F>>> {
-        let alpha_and_r: Vec<Fq2<F>> = [alpha.clone(), r.clone()].concat();
-        // eval[i][j](x) = eq(x, [alpha||r]) * MLE( Z_i * M_j^T )(x)
-        let eval: Vec<Vec<_>> = zm[1..]
-            .iter() // z_2_k: Vec<Vec<Rq>> （Rq: .coeffs()->&[F; D]）
-            .map(|zm_i| {
-                zm_i.iter()
-                    .map(|zm_i_j| {
-                        let zm_i_j: Vec<_> = zm_i_j
-                            .iter()
-                            .flatten()
-                            .copied()
-                            .map(|v| Fq2::<F>::new(v, F::ZERO))
-                            .collect();
-                        let zm_i_j = mle_vector(zm_i_j);
-                        let target = alpha_and_r.clone(); // 各クロージャへムーブ
-                        move |x: &[Fq2<F>]| eq(x, &target) * zm_i_j(x)
-                    })
-                    .collect()
-            })
-            .collect();
-        eval
-    }
 }
 
-fn mle_vector<F: Field>(vector: Vec<Fq2<F>>) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
+fn mle<F: Field>(vector: Vec<Fq2<F>>) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
     move |x: &[Fq2<F>]| {
         assert_eq!(vector.len(), 1 << x.len());
         (0..1 << x.len())
@@ -337,8 +323,7 @@ fn eq<F: Field>(x: &[Fq2<F>], e: &[Fq2<F>]) -> Fq2<F> {
 }
 
 fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<Fq2<F>>> {
-    std::iter::repeat([false, true])
-        .take(n)
+    std::iter::repeat_n([false, true], n)
         .multi_cartesian_product()
         .map(|v| {
             v.into_iter()
@@ -346,6 +331,18 @@ fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<Fq2<F>>> {
                 .map(|v| Fq2::<F>::new(v, F::ZERO))
                 .collect()
         })
+}
+
+fn powers_of<F: Field>(gamma: Fq2<F>) -> impl Iterator<Item = Fq2<F>> {
+    iter::successors(Some(Fq2::<F>::one()), move |p| Some(*p * gamma))
+}
+
+fn powers<F: Field>(b: Fq2<F>, n: usize) -> Vec<Fq2<F>> {
+    let mut pow_of_i = vec![Fq2::<F>::one()];
+    for i in 1..n {
+        pow_of_i[i] = pow_of_i[i - 1] * b;
+    }
+    pow_of_i
 }
 
 #[inline]
@@ -370,4 +367,45 @@ pub fn r_hat<F: Field>(r: &[Fq2<F>]) -> Vec<Fq2<F>> {
         v = next;
     }
     v
+}
+
+pub struct Transcript<F>
+where
+    F: Field + UniformRand,
+{
+    rng: StdRng,
+    _f: PhantomData<F>,
+}
+
+impl<F> Transcript<F>
+where
+    F: Field + UniformRand,
+{
+    pub fn new(seed: &str) -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        seed.hash(&mut h);
+        let s = h.finish();
+        Self {
+            rng: StdRng::seed_from_u64(s),
+            _f: PhantomData,
+        }
+    }
+
+    pub fn get(&mut self) -> Fq2<F> {
+        Fq2::<F>::new(F::rand(&mut self.rng), F::rand(&mut self.rng))
+    }
+
+    pub fn get_vec(&mut self, len: usize) -> Vec<Fq2<F>> {
+        (0..len)
+            .map(|_| Fq2::<F>::new(F::rand(&mut self.rng), F::rand(&mut self.rng)))
+            .collect()
+    }
+
+    pub fn fill(&mut self, out: &mut [Fq2<F>]) {
+        for x in out {
+            *x = Fq2::<F>::new(F::rand(&mut self.rng), F::rand(&mut self.rng));
+        }
+    }
 }

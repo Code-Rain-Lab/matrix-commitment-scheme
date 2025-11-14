@@ -33,7 +33,6 @@ impl<F: PrimeField> Reduction<F> {
 
         // setup
         let z_1 = [vec![F::ONE], mcs.x, mcs.w].concat();
-        //todo:  拡大体じゃないといけないっぽい
         let alpha: Vec<Fq2<F>> = (0..LOG_D)
             .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
             .collect();
@@ -58,7 +57,8 @@ impl<F: PrimeField> Reduction<F> {
         let poly_eval = self.poly_eval(&alpha, &r, &zm);
 
         // Q(X): eq(X, β) * (F(X[log_dn+1..]) + Σ γ^i+1 * nc_i(X)) + Σ γ^i+k+1.. * eval_i(X)
-        let mut gamma_pow_of_i = vec![gamma];
+        let mut gamma_pow_of_i = [gamma];
+        // この辺り、長さ間違えてそう
         for i in 1..K * T {
             gamma_pow_of_i[i] = gamma_pow_of_i[i - 1] * gamma;
         }
@@ -105,6 +105,7 @@ impl<F: PrimeField> Reduction<F> {
         let r_: Vec<Fq2<F>> = (0..LOG_N)
             .map(|_| Fq2::<F>::new(F::rand(&mut rng), F::rand(&mut rng)))
             .collect();
+        let r_hat = r_hat(&r_);
         let random_points = [alpha_, r_].concat();
         let s: Vec<_> = (0..LOG_DN)
             .map(|i| {
@@ -144,21 +145,54 @@ impl<F: PrimeField> Reduction<F> {
         let q_at_random_points = poly_q(&random_points);
         assert_eq!(prev, q_at_random_points, "final check failed");
 
-        // let hat_r_ =
         let y_: Vec<Vec<_>> = zm
             .iter()
             .map(|zm_i| {
                 zm_i.iter()
                     .map(|zm_i_j| {
-                        // aaa
+                        // multiply ZM^T * r_hat
+                        zm_i_j
+                            .iter()
+                            .map(|row| {
+                                row.iter()
+                                    .zip(r_hat.iter())
+                                    .map(|(a, b)| *b * *a) // Fq2 * F
+                                    .sum::<Fq2<F>>()
+                            })
+                            .collect::<Vec<Fq2<F>>>()
                     })
                     .collect()
             })
             .collect();
 
+        // Verify
+        let poly_y_: Vec<Vec<_>> = y_
+            .clone()
+            .into_iter()
+            .map(|y_i| y_i.into_iter().map(|y_i_j| mle_vector(y_i_j)).collect())
+            .collect();
+
+        let one = Fq2::<F>::one();
+        let b = one + one;
+        let mut b_pow_of_i = [one];
+        for i in 1..D {
+            b_pow_of_i[i] = b_pow_of_i[i - 1] * b;
+        }
+        let m_0: Vec<_> = y_[0]
+            .clone()
+            .into_iter()
+            .map(|y_0_j| {
+                y_0_j
+                    .into_iter()
+                    .enumerate()
+                    .map(|(l, y_0_j_l)| b_pow_of_i[l] * y_0_j_l)
+                    .sum::<Fq2<F>>()
+            })
+            .collect();
+
+        let f = (self.ccs_f)(&m_0);
+
         // todo
-        // - Tのチェック
-        // - poly_qのsum-check
         // - r'で、y'などを生成
         // - Vがそれらをチェック
     }
@@ -319,4 +353,21 @@ pub fn coeffs_from_evaluation<F: Field>(eval_at_0: Fq2<F>, eval_at_1: Fq2<F>) ->
     let a = eval_at_0;
     let b = eval_at_1 - eval_at_0;
     [a, b]
+}
+
+/// r_hat(r) = ⊗_{i=1}^m (r_i, 1 - r_i)
+/// 戻り値の長さは 2^m（m = r.len()）
+pub fn r_hat<F: Field>(r: &[Fq2<F>]) -> Vec<Fq2<F>> {
+    let one = Fq2::<F>::one();
+    let mut v = vec![one];
+    for &t in r {
+        let mut next = Vec::with_capacity(v.len() * 2);
+        for &x in &v {
+            // 0 → r_i, 1 → 1 - r_i の順で Kronecker 積を展開
+            next.push(x * t);
+            next.push(x * (one - t));
+        }
+        v = next;
+    }
+    v
 }

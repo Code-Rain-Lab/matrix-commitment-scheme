@@ -2,6 +2,7 @@ pub mod almost_goldilock;
 pub mod commit;
 pub mod reduction;
 pub mod rq;
+pub mod utils;
 
 pub use commit::MatrixCommitmentScheme;
 pub use rq::Rq;

@@ -1,5 +1,6 @@
 pub mod almost_goldilock;
 pub mod commit;
+pub mod fold;
 pub mod reduction;
 pub mod rq;
 pub mod utils;

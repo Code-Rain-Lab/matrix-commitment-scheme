@@ -1,4 +1,4 @@
-use std::ops::Mul;
+use std::ops::{Add, Mul};
 
 use ark_ff::PrimeField;
 use ark_test_curves::PrimeGroup;
@@ -66,7 +66,74 @@ pub fn augmented_synthesizer<F: PrimeField>() {
 
 pub struct Var<F>(F); // wasekiから持ってくる
 pub struct RqVar<F>(F);
+#[derive(Clone, Copy, Default)]
 pub struct Fq2Var<F>(F);
+
+impl<F: PrimeField> Fq2Var<F> {
+    pub fn zero() -> Self {
+        todo!()
+    }
+    pub fn one() -> Self {
+        todo!()
+    }
+    pub fn equal(self, rhs: Self) {
+        todo!()
+    }
+}
+
+impl<F: PrimeField> From<Var<F>> for Fq2Var<F> {
+    fn from(value: Var<F>) -> Self {
+        todo!()
+    }
+}
+
+impl<F: PrimeField> Mul for Fq2Var<F> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<F: PrimeField> Add for Fq2Var<F> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<F: PrimeField> Mul<Fq2<F>> for Fq2Var<F> {
+    type Output = Self;
+
+    fn mul(self, rhs: Fq2<F>) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<F: PrimeField> Add<Fq2<F>> for Fq2Var<F> {
+    type Output = Self;
+
+    fn add(self, rhs: Fq2<F>) -> Self::Output {
+        todo!()
+    }
+}
+
+pub trait Value<T> {
+    fn value(&self) -> T;
+}
+
+impl<F: PrimeField> Value<Fq2<F>> for Fq2Var<F> {
+    fn value(&self) -> Fq2<F> {
+        todo!()
+    }
+}
+
+impl<F: PrimeField> Value<Vec<Fq2<F>>> for Vec<Fq2Var<F>> {
+    fn value(&self) -> Vec<Fq2<F>> {
+        todo!()
+    }
+}
 
 pub struct IncomingInstance<F: PrimeField> {
     c: Vec<Rq<F>>,

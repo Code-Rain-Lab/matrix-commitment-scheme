@@ -5,25 +5,24 @@ use crate::{
     almost_goldilock::Fq2,
     reduction::{
         Reduction,
-        ccs::ME,
         random_linear_combination::{self, SingleMe},
     },
 };
 
-impl<F: PrimeField> Reduction<F> {
-    pub fn decompose_reduction(&mut self, me: SingleMe<F>) -> ME<F> {
-        // prover
-        // let z = split(me.z);
-        // let c = z.iter().map(|z_i| commit).collect();
-        // let y =
-
-        // verifier
-        // c_i を2^iで結合
-        // y_i も同様
-        // 入力のc,yとの一致をみる
-        todo!()
-    }
-}
+// impl<F: PrimeField> Reduction<F> {
+//     pub fn decompose_reduction(&mut self, me: SingleMe<F>) -> ME<F> {
+//         // prover
+//         // let z = split(me.z);
+//         // let c = z.iter().map(|z_i| commit).collect();
+//         // let y =
+//
+//         // verifier
+//         // c_i を2^iで結合
+//         // y_i も同様
+//         // 入力のc,yとの一致をみる
+//         todo!()
+//     }
+// }
 
 pub fn split<F: PrimeField>(z: Vec<Rq<F>>) -> Vec<Vec<Vec<F>>> {
     let z: Vec<_> = z

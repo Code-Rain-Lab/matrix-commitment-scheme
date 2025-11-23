@@ -10,6 +10,7 @@ use itertools::Itertools;
 use crate::{
     D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
     almost_goldilock::{Fq, Fq2},
+    fold::Fq2Var,
 };
 
 pub struct Reduction<F: PrimeField> {
@@ -41,14 +42,16 @@ where
         }
     }
 
-    pub fn get(&mut self) -> Fq2<F> {
-        Fq2::<F>::new(F::rand(&mut self.rng), F::rand(&mut self.rng))
+    pub fn get(&mut self) -> Fq2Var<F> {
+        // Fq2::<F>::new(F::rand(&mut self.rng), F::rand(&mut self.rng))
+        todo!()
     }
 
-    pub fn get_vec(&mut self, len: usize) -> Vec<Fq2<F>> {
-        (0..len)
-            .map(|_| Fq2::<F>::new(F::rand(&mut self.rng), F::rand(&mut self.rng)))
-            .collect()
+    pub fn get_vec(&mut self, len: usize) -> Vec<Fq2Var<F>> {
+        // (0..len)
+        //     .map(|_| Fq2::<F>::new(F::rand(&mut self.rng), F::rand(&mut self.rng)))
+        //     .collect()
+        todo!()
     }
 
     pub fn fill(&mut self, out: &mut [Fq2<F>]) {

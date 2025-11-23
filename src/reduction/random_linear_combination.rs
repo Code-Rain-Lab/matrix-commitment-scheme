@@ -3,7 +3,7 @@ use ark_ff::PrimeField;
 use crate::{
     Rq,
     almost_goldilock::Fq2,
-    reduction::{Reduction, ccs::ME, random_linear_combination},
+    reduction::{Reduction, random_linear_combination},
 };
 
 pub struct SingleMe<F: PrimeField> {
@@ -13,14 +13,14 @@ pub struct SingleMe<F: PrimeField> {
     pub y: Vec<Vec<Fq2<F>>>, // the size is t, which is number of CCS matrix
 }
 
-impl<F: PrimeField> Reduction<F> {
-    pub fn random_linear_combination_reduction(&mut self, me: ME<F>) -> SingleMe<F> {
-        // circuit generates random
-        // let rho = vec![..];
-        // c, x, y をrhoで結合する。
-
-        // proverがそのrho.valueを使って、Zを結合する
-
-        todo!()
-    }
-}
+// impl<F: PrimeField> Reduction<F> {
+//     pub fn random_linear_combination_reduction(&mut self, me: ME<F>) -> SingleMe<F> {
+//         // circuit generates random
+//         // let rho = vec![..];
+//         // c, x, y をrhoで結合する。
+//
+//         // proverがそのrho.valueを使って、Zを結合する
+//
+//         todo!()
+//     }
+// }

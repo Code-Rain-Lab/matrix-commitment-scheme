@@ -3,15 +3,7 @@ use std::ops::{Add, Mul};
 use ark_ff::PrimeField;
 use ark_test_curves::PrimeGroup;
 
-use crate::{
-    LOG_D, LOG_DN, MatrixCommitmentScheme, Rq,
-    almost_goldilock::Fq2,
-    mat::Mat,
-    reduction::{
-        Transcript,
-        ccs::{eq, mle, powers_of},
-    },
-};
+use crate::{LOG_D, LOG_DN, MatrixCommitmentScheme, Rq, fq2::Fq2, mat::Mat, reduction::Transcript};
 
 pub struct Fold<F: PrimeField> {
     scheme: MatrixCommitmentScheme<F>,

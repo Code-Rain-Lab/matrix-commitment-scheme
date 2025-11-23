@@ -1,17 +1,13 @@
 pub mod ccs;
-pub mod decomposition;
-pub mod random_linear_combination;
+// pub mod decomposition;
+// pub mod random_linear_combination;
 use std::{iter, marker::PhantomData};
 
 use ark_ff::{Field, PrimeField, UniformRand};
 use ark_std::rand::{SeedableRng, rngs::StdRng};
 use itertools::Itertools;
 
-use crate::{
-    D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
-    almost_goldilock::{Fq, Fq2},
-    fold::Fq2Var,
-};
+use crate::{D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T, fold::Fq2Var, fq2::Fq2};
 
 pub struct Reduction<F: PrimeField> {
     ccs_matrix: [Vec<Vec<F>>; T],

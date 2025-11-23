@@ -42,7 +42,7 @@ where
 
 impl<F> Fq2<F>
 where
-    F: Copy + Zero + One + Add<Output = F>,
+    F: Copy + Zero,
 {
     #[inline]
     pub fn zero() -> Self {
@@ -51,7 +51,12 @@ where
             c1: F::zero(),
         }
     }
+}
 
+impl<F> Fq2<F>
+where
+    F: Copy + Zero + One,
+{
     #[inline]
     pub fn one() -> Self {
         Self {
@@ -59,7 +64,12 @@ where
             c1: F::zero(),
         }
     }
+}
 
+impl<F> Fq2<F>
+where
+    F: Copy + Zero + One + Add<Output = F>,
+{
     #[inline]
     pub fn two() -> Self {
         let one = F::one();
@@ -125,7 +135,7 @@ where
         let a2 = self.c0 * self.c0;
         let b2 = self.c1 * self.c1;
         let three_b2 = b2 + b2 + b2;
-        let mut denom = a2 - three_b2;
+        let denom = a2 - three_b2;
 
         if denom.is_zero() {
             return None;

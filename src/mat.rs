@@ -2,7 +2,7 @@ use std::ops::Mul;
 
 use ark_ff::PrimeField;
 
-use crate::almost_goldilock::Fq2;
+use crate::fq2::Fq2;
 
 pub struct Mat<T>(Vec<Vec<T>>);
 

@@ -12,7 +12,15 @@ use crate::{
 
 impl<F: PrimeField> Reduction<F> {
     pub fn decompose_reduction(&mut self, me: SingleMe<F>) -> ME<F> {
-        let z = split(me.z);
+        // prover
+        // let z = split(me.z);
+        // let c = z.iter().map(|z_i| commit).collect();
+        // let y =
+
+        // verifier
+        // c_i を2^iで結合
+        // y_i も同様
+        // 入力のc,yとの一致をみる
         todo!()
     }
 }

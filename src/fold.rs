@@ -3,7 +3,15 @@ use std::ops::Mul;
 use ark_ff::PrimeField;
 use ark_test_curves::PrimeGroup;
 
-use crate::{MatrixCommitmentScheme, Rq, almost_goldilock::Fq2, reduction::ccs::mle};
+use crate::{
+    LOG_D, LOG_DN, MatrixCommitmentScheme, Rq,
+    almost_goldilock::Fq2,
+    mat::Mat,
+    reduction::{
+        Transcript,
+        ccs::{eq, mle, powers_of},
+    },
+};
 
 pub struct Fold<F: PrimeField> {
     scheme: MatrixCommitmentScheme<F>,
@@ -56,67 +64,27 @@ pub fn augmented_synthesizer<F: PrimeField>() {
     // let x = x_n.value();
 }
 
-pub struct Mat<T>(Vec<Vec<T>>);
-
-// FqMatrix * FqMatrix -> FqMatrix
-// FqMatrix * Fq2Vector -> Fq2Vector
-impl<F: PrimeField> Mul<&Mat<F>> for &Mat<F> {
-    type Output = Mat<F>;
-
-    fn mul(self, rhs: &Mat<F>) -> Self::Output {
-        todo!()
-    }
-}
-
-impl<F: PrimeField> Mul<&Vec<Fq2<F>>> for &Mat<F> {
-    type Output = Vec<Fq2<F>>;
-
-    fn mul(self, rhs: &Vec<Fq2<F>>) -> Self::Output {
-        todo!()
-    }
-}
-
-pub fn fold<F: PrimeField>(
-    instance_r: RunningInstanceVar<F>,
-    instance_i: IncomingInstanceVar<F>,
-) -> RunningInstanceVar<F> {
-    // CCS Reduction
-    // let lc = // linear combinatins for each Matrix, lc_0, lc_1, lc_2
-    let r_prime_hat: Vec<Fq2<F>> = vec![];
-    let z = Mat::<F>(vec![]);
-    let mt = Mat::<F>(vec![]);
-    let zmt = &z * &mt;
-    let mle_m = mle(zmt.0.iter().flatten().map(Into::into).collect());
-    let y_prime = &zmt * &r_prime_hat;
-    // let (z, s, y_prime, alpha_prime, r_prime) =
-    //     prove_ccs_reduction(instance_r.z, instance_i.z, alpha, beta, gamma);
-    // veriry_sumcheck(s, instance_r.y, alpha, beta, gamma, r, alpha_prime, r_prime);
-    //
-    // let big_norm_matrix_evaluation = random_linear_combination_reduction(k_matrix_evaluations);
-    //
-    // let instance_r = random_linear_combination_reduction(k_matrix_evaluations);
-    todo!()
-}
-
 pub struct Var<F>(F); // wasekiから持ってくる
 pub struct RqVar<F>(F);
 pub struct Fq2Var<F>(F);
 
 pub struct IncomingInstance<F: PrimeField> {
     c: Vec<Rq<F>>,
-    x: Vec<F>,
-    w: Vec<F>,
+    z: Mat<F>,
+    x: Mat<F>,
+    lc: (Vec<F>, Vec<F>, Vec<F>),
 }
 pub struct IncomingInstanceVar<F: PrimeField> {
     c: Vec<RqVar<F>>,
-    x: Vec<RqVar<F>>,
-    w: Vec<F>,
+    z: Mat<F>,
+    x: Mat<F>,
+    lc: (Vec<F>, Vec<F>, Vec<F>),
 }
 
 pub struct RunningInstance<F: PrimeField> {
     c: Vec<Vec<Rq<F>>>,
-    x: Vec<Vec<Rq<F>>>,
-    z: Vec<Vec<Rq<F>>>,
+    z: Vec<Mat<F>>,
+    x: Vec<Mat<F>>,
     r: Vec<Fq2<F>>,           // the size is log N, N is the number of constraints
     y: Vec<Vec<Vec<Fq2<F>>>>, // the size is t, which is number of CCS matrix
 }

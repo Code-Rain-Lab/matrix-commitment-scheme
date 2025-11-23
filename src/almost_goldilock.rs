@@ -82,6 +82,11 @@ impl<F: Field> Fq2<F> {
     }
 
     #[inline]
+    pub fn two() -> Self {
+        Self::one() + Self::one()
+    }
+
+    #[inline]
     pub fn new(c0: F, c1: F) -> Self {
         Self { c0, c1 }
     }

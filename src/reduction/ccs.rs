@@ -1,13 +1,79 @@
 use std::iter;
 
 use ark_ff::{Field, PrimeField};
+use ark_std::iterable::Iterable;
 use itertools::Itertools;
 
 use crate::{
     D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
     almost_goldilock::{Fq, Fq2},
+    mat::Mat,
     reduction::{Reduction, Transcript},
 };
+
+pub fn ccs_reduction<F: PrimeField>(
+    z: Vec<Mat<F>>,
+    r: Vec<Fq2<F>>,
+    lc: [Vec<F>; 3],
+    mt: [Mat<F>; 3],
+) {
+    // CCS Reduction
+    let mut transcript = Transcript::new("somthing seeed");
+    let alpha = transcript.get_vec(LOG_D);
+    let beta = transcript.get_vec(LOG_DN);
+    let gamma = transcript.get();
+
+    let zmt: Vec<Vec<_>> = z
+        .iter()
+        .map(|z_i| mt.iter().map(|mt_j| z_i * mt_j).collect())
+        .collect();
+    let alpha_and_r: Vec<Fq2<F>> = vec![];
+    let lc: Vec<_> = lc.into_iter().map(mle).collect();
+    // poly
+    let poly_f = |x: &[Fq2<F>]| lc[0](x) * lc[1](x) - lc[2](x);
+    let poly_nc: Vec<_> = z
+        .iter()
+        .map(|z_i| {
+            |x: &[Fq2<F>]| {
+                let v = mle(z_i.flatten())(x);
+                (v - Fq2::two()) * (v - Fq2::one()) * v * (v + Fq2::one()) * (v + Fq2::two())
+            }
+        })
+        .collect();
+    let poly_eval: Vec<_> = zmt
+        .iter()
+        .flatten()
+        .map(|zmt_i_j| |x: &[Fq2<F>]| eq(x, &alpha_and_r) * mle(zmt_i_j.flatten())(x))
+        .collect();
+    let poly_q = |x: &[Fq2<F>]| {
+        let mut pow = powers_of(gamma);
+        pow.next(); // γ^0は使わない。
+        eq(x, &beta)
+            * (poly_f(&x[LOG_D..])
+                + poly_nc
+                    .iter()
+                    .zip(pow.by_ref())
+                    .map(|(nc_i, pow)| pow * nc_i(x))
+                    .sum())
+            + poly_eval
+                .iter()
+                .zip(pow.by_ref())
+                .map(|(eval_i_j, pow)| pow * eval_i_j(x))
+                .sum()
+    };
+
+    let (challenge, s) = prove_sumcheck(poly_q);
+
+    let r_hat_prime: Vec<Fq2<F>> = vec![];
+    let zmtr_prime: Vec<Vec<_>> = zmt
+        .iter()
+        .map(|zmt_i| zmt_i.iter().map(|zmt_i_j| zmt_i_j * &r_hat_prime).collect())
+        .collect();
+}
+
+pub fn prove_sumcheck<F: Field>(poly: impl Fn(&[Fq2<F>]) -> Fq2<F>) -> (Vec<Fq2<F>>, Vec<Fq2<F>>) {
+    todo!()
+}
 
 pub struct MCS<F: PrimeField> {
     c: Vec<Rq<F>>,
@@ -277,10 +343,17 @@ impl<F: PrimeField> Reduction<F> {
     }
 }
 
-pub fn mle<F: Field>(vector: Vec<Fq2<F>>) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
+pub fn mle<F, T>(vector: Vec<T>) -> impl Fn(&[Fq2<F>]) -> Fq2<F>
+where
+    F: Field,
+    T: Into<Fq2<F>>,
+{
+    // ここで一度だけ全部 Fq2<F> に落とし込む
+    let vector: Vec<Fq2<F>> = vector.into_iter().map(Into::into).collect();
+
     move |x: &[Fq2<F>]| {
         assert_eq!(vector.len(), 1 << x.len());
-        (0..1 << x.len())
+        (0..(1 << x.len()))
             .map(|idx| vector[idx] * eq(x, &bits(idx, x.len())))
             .fold(Fq2::<F>::one(), |acc, x| acc + x)
     }
@@ -292,7 +365,7 @@ fn bits<F: Field>(v: usize, len: usize) -> Vec<Fq2<F>> {
         .collect()
 }
 
-fn eq<F: Field>(x: &[Fq2<F>], e: &[Fq2<F>]) -> Fq2<F> {
+pub fn eq<F: Field>(x: &[Fq2<F>], e: &[Fq2<F>]) -> Fq2<F> {
     assert!(x.len() == e.len());
     let one = Fq2::<F>::one();
     x.iter()
@@ -312,7 +385,7 @@ fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<Fq2<F>>> {
         })
 }
 
-fn powers_of<F: Field>(gamma: Fq2<F>) -> impl Iterator<Item = Fq2<F>> {
+pub fn powers_of<F: Field>(gamma: Fq2<F>) -> impl Iterator<Item = Fq2<F>> {
     iter::successors(Some(Fq2::<F>::one()), move |p| Some(*p * gamma))
 }
 

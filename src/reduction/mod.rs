@@ -1,6 +1,6 @@
-mod ccs;
-mod decomposition;
-mod random_linear_combination;
+pub mod ccs;
+pub mod decomposition;
+pub mod random_linear_combination;
 use std::{iter, marker::PhantomData};
 
 use ark_ff::{Field, PrimeField, UniformRand};

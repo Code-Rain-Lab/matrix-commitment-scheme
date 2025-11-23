@@ -27,6 +27,12 @@ impl<F: Field> From<F> for Fq2<F> {
     }
 }
 
+impl<F: Field> From<&F> for Fq2<F> {
+    fn from(value: &F) -> Self {
+        Self::new(*value, F::ZERO)
+    }
+}
+
 // impl<F: Field> Zero for Fq2<F> {
 //     #[inline]
 //     fn zero() -> Self {

@@ -277,7 +277,7 @@ impl<F: PrimeField> Reduction<F> {
     }
 }
 
-fn mle<F: Field>(vector: Vec<Fq2<F>>) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
+pub fn mle<F: Field>(vector: Vec<Fq2<F>>) -> impl Fn(&[Fq2<F>]) -> Fq2<F> {
     move |x: &[Fq2<F>]| {
         assert_eq!(vector.len(), 1 << x.len());
         (0..1 << x.len())

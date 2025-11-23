@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::{
     D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
-    fold::{Fq2Var, Value, Var},
+    fold::{CircuitVariable, Var},
     fq2::Fq2,
     mat::Mat,
     mle::{eq, mle},
@@ -15,8 +15,8 @@ use crate::{
 
 pub fn ccs_reduction<F: PrimeField>(
     z: Vec<Mat<F>>,
-    r: Vec<Fq2Var<F>>,
-    y: Vec<Vec<Vec<Fq2Var<F>>>>,
+    r: Vec<Fq2<Var<F>>>,
+    y: Vec<Vec<Vec<Fq2<Var<F>>>>>,
     lc: [Vec<F>; 3],
     mt: [Mat<F>; 3],
 ) {
@@ -64,16 +64,16 @@ pub fn ccs_reduction<F: PrimeField>(
                 .sum()
     };
 
-    let t: Fq2Var<F> = {
+    let t: Fq2<Var<F>> = {
         let mut pow = powers_of(gamma);
         (0..K).zip(pow.by_ref()); // 必要ない分を消費する
         // y.iter().flatten().zip(pow.by_ref()).map(|(y_i_j, pow)| pow * ).sum()
-        Fq2Var::default() // コンパイル通すためのダミー
+        Fq2::<Var<F>>::default() // コンパイル通すためのダミー
         // Varに対応したmleを作らないといけない。
     };
 
     // Sumcheck
-    let mut challenges: Vec<Fq2Var<F>> = vec![];
+    let mut challenges: Vec<Fq2<Var<F>>> = vec![];
     let mut expected_values = vec![t];
     for i in 0..LOG_DN {
         let (eval_at_0, eval_at_1) = all_bool_patterns::<F>(LOG_DN - i - 1)
@@ -82,18 +82,18 @@ pub fn ccs_reduction<F: PrimeField>(
                 let x_1 = [challenges.value(), vec![Fq2::one()], rest.clone()].concat();
                 (poly_q(&x_0), poly_q(&x_1))
             })
-            .fold((Fq2::zero(), Fq2::zero()), |acc, x| {
+            .fold((Fq2::<F>::zero(), Fq2::zero()), |acc, x| {
                 (acc.0 + x.0, acc.1 + x.1)
             });
         let (a, b) = coeffs_from_evaluation(eval_at_0, eval_at_1);
 
         // ここでverifyする。
-        let s = |x: Fq2Var<F>| x * a + b;
-        let zero = Fq2Var::<F>::zero();
-        let one = Fq2Var::<F>::one();
+        let s = |x: Fq2<Var<F>>| x * a + b;
+        let zero = Fq2::<Var<F>>::zero();
+        let one = Fq2::<Var<F>>::one();
         expected_values[i].equal(s(zero) + s(one));
 
-        let challenge = Fq2Var::default(); // ダミー
+        let challenge = Fq2::<Var<F>>::default(); // ダミー
         expected_values.push(s(challenge));
         challenges.push(challenge);
     }

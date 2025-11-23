@@ -1,9 +1,10 @@
+use ark_ff::PrimeField;
 use core::iter::Sum;
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use num_traits::{Inv, One, Zero};
 
 /// x = c0 + c1 * u, where u^2 = 3 (Δ = 3).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Fq2<F> {
     pub c0: F,
     pub c1: F,
@@ -18,7 +19,7 @@ impl<F> Fq2<F> {
 
 /* ---------- From ---------- */
 
-impl<F> From<F> for Fq2<F>
+impl<F: PrimeField> From<F> for Fq2<F>
 where
     F: Zero,
 {

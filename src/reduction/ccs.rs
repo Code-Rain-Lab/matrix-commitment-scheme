@@ -7,7 +7,7 @@ use num_traits::{One, Zero};
 
 use crate::{
     D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
-    fold::{CircuitVariable, Var},
+    fold::{CircuitVariable, Var, alloc_fq2_vec},
     fq2::Fq2,
     mat::Mat,
     mle::{eq, mle},
@@ -20,7 +20,7 @@ pub fn ccs_reduction<F: PrimeField>(
     y: Vec<Vec<Vec<Fq2<Var<F>>>>>,
     lc: [Vec<F>; 3],
     mt: [Mat<F>; 3],
-) {
+) -> (Vec<Fq2<Var<F>>>, Vec<Vec<Vec<Fq2<Var<F>>>>>) {
     // CCS Reduction
     let mut transcript = Transcript::new("somthing seeed");
     let alpha = transcript.get_vec(LOG_D);
@@ -112,7 +112,7 @@ pub fn ccs_reduction<F: PrimeField>(
             zmt_i
                 .iter()
                 .map(|zmt_i_j| zmt_i_j * &r_hat_prime)
-                // .map(|v| v.into())
+                .map(alloc_fq2_vec)
                 .collect()
         })
         .collect();
@@ -134,17 +134,41 @@ pub fn ccs_reduction<F: PrimeField>(
     let value_nc: Vec<_> = y_prime
         .iter()
         .map(|y_prime_i| {
-            |x: &[Fq2<F>]| {
-                let v = mle(y_prime_i[0].clone())(x);
-                (-3..1).map(Into::<F>::into).map(|j| v - j).sum::<Fq2<F>>()
-            }
+            // なぜy'(i,1)だけなのかわからない。
+            let v = mle(y_prime_i[0].clone())(&alpha_prime);
+            (-3..1)
+                .map(Into::<F>::into)
+                .map(|j| v - j)
+                .sum::<Fq2<Var<F>>>()
         })
         .collect();
-    // let value_eval =
-    // let value_q =
-    // value_q.equal(v);
+    let alpha_and_r_prime = challenges;
+    let value_eval: Vec<_> = y_prime[1..]
+        .iter()
+        .flatten()
+        .map(|y_prime_i_j| {
+            eq(&alpha_and_r_prime, &alpha_and_r) * mle(y_prime_i_j.clone())(&alpha_prime)
+        })
+        .collect();
+    let value_q = {
+        let mut pow = powers_of(gamma);
+        pow.next(); // skip the γ^0
+        eq(&alpha_and_r_prime, &beta)
+            * (value_f
+                + value_nc
+                    .iter()
+                    .zip(pow.by_ref())
+                    .map(|(&nc_i, pow)| pow * nc_i)
+                    .sum::<Fq2<Var<F>>>())
+            + value_eval
+                .iter()
+                .zip(pow.by_ref())
+                .map(|(&eval_i_j, pow)| pow * eval_i_j)
+                .sum::<Fq2<Var<F>>>()
+    };
+    value_q.equal(v);
 
-    // Fq2のジェネリクスがVarを受け付けるようにしたい。mleをVarに対応させる
+    (r_prime, y_prime)
 }
 
 fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<Fq2<F>>> {

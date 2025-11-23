@@ -60,12 +60,10 @@ pub fn augmented_synthesizer<F: PrimeField>() {
 pub struct Var<F>(F); // wasekiから持ってくる
 pub struct RqVar<F>(F);
 
-impl<F: PrimeField, T> From<Var<F>> for Fq2<Var<F>>
-where
-    T: Into<Var<F>>,
-{
-    fn from(value: T) -> Self {
-        todo!()
+impl<F: PrimeField> From<Var<F>> for Fq2<Var<F>> {
+    fn from(value: Var<F>) -> Self {
+        // Treat a variable as the c0 term with zero for c1.
+        Self::new(value, Var(F::zero()))
     }
 }
 
@@ -85,13 +83,6 @@ where
 //     }
 // }
 
-impl<F: PrimeField> Mul<F> for Fq2<F> {
-    type Output = Self;
-
-    fn mul(self, rhs: F) -> Self::Output {
-        todo!()
-    }
-}
 impl<F: PrimeField> Add<F> for Fq2<F> {
     type Output = Self;
 
@@ -100,6 +91,13 @@ impl<F: PrimeField> Add<F> for Fq2<F> {
     }
 }
 impl<F: PrimeField> Sub<F> for Fq2<F> {
+    type Output = Self;
+
+    fn sub(self, rhs: F) -> Self::Output {
+        todo!()
+    }
+}
+impl<F: PrimeField> Sub<F> for Fq2<Var<F>> {
     type Output = Self;
 
     fn sub(self, rhs: F) -> Self::Output {
@@ -145,6 +143,10 @@ impl<F: PrimeField> Mul for Var<F> {
     fn mul(self, rhs: Self) -> Self::Output {
         todo!()
     }
+}
+
+pub fn alloc_fq2_vec<F: PrimeField>(vec: Vec<Fq2<F>>) -> Vec<Fq2<Var<F>>> {
+    todo!()
 }
 
 pub trait CircuitVariable<T> {

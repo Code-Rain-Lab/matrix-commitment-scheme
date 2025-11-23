@@ -3,6 +3,7 @@ use std::{iter, ops::Mul};
 use ark_ff::{Field, PrimeField};
 use ark_std::iterable::Iterable;
 use itertools::Itertools;
+use num_traits::{One, Zero};
 
 use crate::{
     D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
@@ -50,6 +51,7 @@ pub fn ccs_reduction<F: PrimeField>(
         .collect();
     let poly_q = |x: &[Fq2<F>]| {
         let mut pow = powers_of(gamma.value());
+        pow.next(); // skip the γ^0
         eq(x, &beta.value())
             * (poly_f(&x[LOG_D..])
                 + poly_nc
@@ -66,10 +68,12 @@ pub fn ccs_reduction<F: PrimeField>(
 
     let t: Fq2<Var<F>> = {
         let mut pow = powers_of(gamma);
-        (0..K).zip(pow.by_ref()); // 必要ない分を消費する
-        // y.iter().flatten().zip(pow.by_ref()).map(|(y_i_j, pow)| pow * ).sum()
-        Fq2::<Var<F>>::default() // コンパイル通すためのダミー
-        // Varに対応したmleを作らないといけない。
+        pow.by_ref().take(K + 1).for_each(|_| {}); // 必要ない分を消費する. γ^0も含めて.
+        y.into_iter()
+            .flatten()
+            .zip(pow.by_ref())
+            .map(|(y_i_j, pow)| pow * mle(y_i_j)(&alpha))
+            .sum()
     };
 
     // Sumcheck
@@ -109,6 +113,7 @@ pub fn ccs_reduction<F: PrimeField>(
 
     // v を y_primeから復元できるかを確かめる
     let v = expected_values.pop().unwrap();
+    // let m = y_prime[0].iter().map(||).sum();
 
     // Fq2のジェネリクスがVarを受け付けるようにしたい。mleをVarに対応させる
 }
@@ -126,9 +131,9 @@ fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<Fq2<F>>> {
 
 pub fn powers_of<T>(gamma: T) -> impl Iterator<Item = T>
 where
-    T: Copy + Mul<Output = T>,
+    T: Copy + Mul<Output = T> + One,
 {
-    iter::successors(Some(gamma), move |p| Some(*p * gamma))
+    iter::successors(Some(T::one()), move |p| Some(*p * gamma))
 }
 
 fn powers<F: Field>(b: Fq2<F>, n: usize) -> Vec<Fq2<F>> {

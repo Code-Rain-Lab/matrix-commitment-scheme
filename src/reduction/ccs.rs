@@ -40,7 +40,7 @@ pub fn ccs_reduction<F: PrimeField>(
         .map(|z_i| {
             |x: &[Fq2<F>]| {
                 let v = mle(z_i.flatten())(x);
-                (v - Fq2::two()) * (v - Fq2::one()) * v * (v + Fq2::one()) * (v + Fq2::two())
+                (-3..1).map(Into::<F>::into).map(|j| v - j).sum::<Fq2<F>>()
             }
         })
         .collect();
@@ -58,12 +58,12 @@ pub fn ccs_reduction<F: PrimeField>(
                     .iter()
                     .zip(pow.by_ref())
                     .map(|(nc_i, pow)| pow * nc_i(x))
-                    .sum())
+                    .sum::<Fq2<F>>())
             + poly_eval
                 .iter()
                 .zip(pow.by_ref())
                 .map(|(eval_i_j, pow)| pow * eval_i_j(x))
-                .sum()
+                .sum::<Fq2<F>>()
     };
 
     // Q(X)のhyperbooleanでの合計Tは、yからverifierが求められる。
@@ -105,9 +105,16 @@ pub fn ccs_reduction<F: PrimeField>(
     let r_prime = challenges[LOG_D..].to_vec();
     let r_hat_prime = r_hat(&r_prime.value());
 
+    // y'は回路ないで使うので、この時点で回路変数化しても良い
     let y_prime: Vec<Vec<_>> = zmt
         .iter()
-        .map(|zmt_i| zmt_i.iter().map(|zmt_i_j| zmt_i_j * &r_hat_prime).collect())
+        .map(|zmt_i| {
+            zmt_i
+                .iter()
+                .map(|zmt_i_j| zmt_i_j * &r_hat_prime)
+                // .map(|v| v.into())
+                .collect()
+        })
         .collect();
 
     // v を y_primeから復元できるかを確かめる
@@ -124,7 +131,15 @@ pub fn ccs_reduction<F: PrimeField>(
         })
         .collect();
     let value_f = m[0] * m[1] - m[2];
-    // let value_nc =
+    let value_nc: Vec<_> = y_prime
+        .iter()
+        .map(|y_prime_i| {
+            |x: &[Fq2<F>]| {
+                let v = mle(y_prime_i[0].clone())(x);
+                (-3..1).map(Into::<F>::into).map(|j| v - j).sum::<Fq2<F>>()
+            }
+        })
+        .collect();
     // let value_eval =
     // let value_q =
     // value_q.equal(v);

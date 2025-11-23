@@ -81,6 +81,20 @@ where
     }
 }
 
+impl<F> Fq2<F>
+where
+    F: Copy + Zero + One + Add<Output = F>,
+{
+    #[inline]
+    pub fn three() -> Self {
+        let one = F::one();
+        Self {
+            c0: one + one + one,
+            c1: F::zero(),
+        }
+    }
+}
+
 /* ---------- num_traits::Zero / One ---------- */
 
 impl<F> Zero for Fq2<F>

@@ -85,6 +85,28 @@ where
 //     }
 // }
 
+impl<F: PrimeField> Mul<F> for Fq2<F> {
+    type Output = Self;
+
+    fn mul(self, rhs: F) -> Self::Output {
+        todo!()
+    }
+}
+impl<F: PrimeField> Add<F> for Fq2<F> {
+    type Output = Self;
+
+    fn add(self, rhs: F) -> Self::Output {
+        todo!()
+    }
+}
+impl<F: PrimeField> Sub<F> for Fq2<F> {
+    type Output = Self;
+
+    fn sub(self, rhs: F) -> Self::Output {
+        todo!()
+    }
+}
+
 impl<F: PrimeField> Mul<Fq2<F>> for Fq2<Var<F>> {
     type Output = Self;
 

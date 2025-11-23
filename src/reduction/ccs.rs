@@ -66,6 +66,7 @@ pub fn ccs_reduction<F: PrimeField>(
                 .sum()
     };
 
+    // Q(X)のhyperbooleanでの合計Tは、yからverifierが求められる。
     let t: Fq2<Var<F>> = {
         let mut pow = powers_of(gamma);
         pow.by_ref().take(K + 1).for_each(|_| {}); // 必要ない分を消費する. γ^0も含めて.
@@ -93,9 +94,7 @@ pub fn ccs_reduction<F: PrimeField>(
 
         // ここでverifyする。
         let s = |x: Fq2<Var<F>>| x * a + b;
-        let zero = Fq2::<Var<F>>::zero();
-        let one = Fq2::<Var<F>>::one();
-        expected_values[i].equal(s(zero) + s(one));
+        expected_values[i].equal(s(Fq2::zero()) + s(Fq2::one()));
 
         let challenge = Fq2::<Var<F>>::default(); // ダミー
         expected_values.push(s(challenge));
@@ -113,7 +112,22 @@ pub fn ccs_reduction<F: PrimeField>(
 
     // v を y_primeから復元できるかを確かめる
     let v = expected_values.pop().unwrap();
-    // let m = y_prime[0].iter().map(||).sum();
+    let mut pow = powers_of(Fq2::<Var<F>>::two());
+    let m: Vec<Fq2<Var<F>>> = y_prime[0]
+        .iter()
+        .map(|y_0_j| {
+            y_0_j
+                .iter()
+                .zip(pow.by_ref())
+                .map(|(&y_0_j_l, pow)| pow * y_0_j_l)
+                .sum()
+        })
+        .collect();
+    let value_f = m[0] * m[1] - m[2];
+    // let value_nc =
+    // let value_eval =
+    // let value_q =
+    // value_q.equal(v);
 
     // Fq2のジェネリクスがVarを受け付けるようにしたい。mleをVarに対応させる
 }
@@ -134,14 +148,6 @@ where
     T: Copy + Mul<Output = T> + One,
 {
     iter::successors(Some(T::one()), move |p| Some(*p * gamma))
-}
-
-fn powers<F: Field>(b: Fq2<F>, n: usize) -> Vec<Fq2<F>> {
-    let mut pow_of_i = vec![Fq2::<F>::one()];
-    for i in 1..n {
-        pow_of_i[i] = pow_of_i[i - 1] * b;
-    }
-    pow_of_i
 }
 
 #[inline]

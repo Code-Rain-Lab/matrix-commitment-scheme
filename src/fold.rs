@@ -60,8 +60,11 @@ pub fn augmented_synthesizer<F: PrimeField>() {
 pub struct Var<F>(F); // wasekiから持ってくる
 pub struct RqVar<F>(F);
 
-impl<F: PrimeField> From<Var<F>> for Fq2<Var<F>> {
-    fn from(value: Var<F>) -> Self {
+impl<F: PrimeField, T> From<Var<F>> for Fq2<Var<F>>
+where
+    T: Into<Var<F>>,
+{
+    fn from(value: T) -> Self {
         todo!()
     }
 }

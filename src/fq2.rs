@@ -81,6 +81,38 @@ where
     }
 }
 
+/* ---------- num_traits::Zero / One ---------- */
+
+impl<F> Zero for Fq2<F>
+where
+    F: Zero,
+{
+    #[inline]
+    fn zero() -> Self {
+        Self::new(F::zero(), F::zero())
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.c0.is_zero() && self.c1.is_zero()
+    }
+}
+
+impl<F> One for Fq2<F>
+where
+    F: Copy + Zero + One + Add<Output = F> + Sub<Output = F> + Mul<Output = F>,
+{
+    #[inline]
+    fn one() -> Self {
+        Self::new(F::one(), F::zero())
+    }
+
+    #[inline]
+    fn is_one(&self) -> bool {
+        self.c1.is_zero() && (self.c0 - F::one()).is_zero()
+    }
+}
+
 /* ---------- pow (自前で square = x*x) ---------- */
 
 impl<F> Fq2<F>

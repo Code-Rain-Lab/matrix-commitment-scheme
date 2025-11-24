@@ -1,16 +1,38 @@
+use std::{iter, ops::Mul};
+
 use ark_ff::PrimeField;
+use itertools::izip;
+use num_traits::{One, Zero};
 
-use crate::{
-    Rq,
-    almost_goldilock::Fq2,
-    reduction::{Reduction, random_linear_combination},
-};
+use crate::{Rq, fold::Var, fq2::Fq2, mat::Mat};
 
-pub struct SingleMe<F: PrimeField> {
-    pub c: Vec<Rq<F>>,
-    pub z: Vec<Rq<F>>,
-    pub r: Fq2<F>,           // the size is log N, N is the number of constraints
-    pub y: Vec<Vec<Fq2<F>>>, // the size is t, which is number of CCS matrix
+pub fn random_linear_combination_reduction<F: PrimeField>(
+    c: Vec<Mat<Var<F>>>,
+    x: Vec<Mat<Var<F>>>,
+    r: Vec<Fq2<Var<F>>>,
+    y: Vec<Vec<Fq2<Var<F>>>>,
+    z: Vec<Mat<F>>,
+) {
+    assert!(c.len() == x.len() && c.len() == z.len() && c.len() == y.len());
+
+    let mut rho = challenge::<Fq2<Var<F>>>(); // チャレンジは行列のはず
+    izip!(c, x, y, z, rho.by_ref()).map(|(c_i, x_i, y_i, z_i, rho_i)| {
+        // let c = rho_i * c_i;
+        // let x = rho_i * x_i;
+        // let y = rho_i * y_i;
+        // let z = rho_i.value() * z_i;
+        // (c, x, z)
+    });
+    // .fold()
+}
+
+pub fn challenge<T>() -> impl Iterator<Item = T>
+where
+    T: Copy + Mul<Output = T> + One,
+{
+    // ダミー
+    // ここで、チャレンジを生成する。hashとかで
+    iter::successors(Some(T::one()), move |p| Some(*p))
 }
 
 // impl<F: PrimeField> Reduction<F> {

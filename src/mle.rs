@@ -24,6 +24,7 @@ fn bits<F>(v: usize, len: usize) -> Vec<Fq2<F>>
 where
     F: Copy + Zero + One,
 {
+    // 回路の場合、oneは定数じゃないとwitnessに自由度が生まれてしまう
     let one = F::one();
     let zero = F::zero();
     (0..len)

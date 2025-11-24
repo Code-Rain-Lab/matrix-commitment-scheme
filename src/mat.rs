@@ -2,7 +2,10 @@ use std::ops::Mul;
 
 use ark_ff::PrimeField;
 
-use crate::fq2::Fq2;
+use crate::{
+    fold::{CircuitVariable, Var},
+    fq2::Fq2,
+};
 
 pub struct Mat<T>(Vec<Vec<T>>);
 
@@ -22,10 +25,44 @@ impl<F: PrimeField> Mul<&Mat<F>> for &Mat<F> {
     }
 }
 
-impl<F: PrimeField> Mul<&Vec<Fq2<F>>> for &Mat<F> {
+impl<F> Mul<Vec<Fq2<F>>> for Mat<F> {
+    type Output = Vec<Fq2<F>>;
+
+    fn mul(self, rhs: Vec<Fq2<F>>) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<F> Mul<&Vec<Fq2<F>>> for &Mat<F> {
     type Output = Vec<Fq2<F>>;
 
     fn mul(self, rhs: &Vec<Fq2<F>>) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<F> Mul<Vec<F>> for Mat<F> {
+    type Output = Vec<F>;
+
+    fn mul(self, rhs: Vec<F>) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<F> Mul<&Vec<F>> for &Mat<F> {
+    type Output = Vec<F>;
+
+    fn mul(self, rhs: &Vec<F>) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<F: PrimeField> CircuitVariable<Mat<F>> for Mat<Var<F>> {
+    fn value(&self) -> Mat<F> {
+        todo!()
+    }
+
+    fn equal(&self, rhs: Self) {
         todo!()
     }
 }

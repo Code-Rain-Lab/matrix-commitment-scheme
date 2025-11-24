@@ -172,6 +172,15 @@ impl<F: PrimeField> CircuitVariable<Vec<Fq2<F>>> for Vec<Fq2<Var<F>>> {
     }
 }
 
+impl<F: PrimeField> CircuitVariable<Vec<F>> for Vec<Var<F>> {
+    fn value(&self) -> Vec<F> {
+        todo!()
+    }
+    fn equal(&self, rhs: Self) {
+        todo!()
+    }
+}
+
 impl<F: PrimeField> Zero for Var<F>
 where
     F: Copy + Zero,

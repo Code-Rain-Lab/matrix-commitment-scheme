@@ -1,6 +1,6 @@
-pub mod almost_goldilock;
 pub mod commit;
 pub mod fold;
+pub mod fq;
 pub mod fq2;
 pub mod mat;
 pub mod mle;

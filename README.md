@@ -1,5 +1,5 @@
 
-![](https://pbs.twimg.com/media/G6f0DIEbcAAJFWD?format=jpg&name=medium)
+![](docs/matrix-meme.png)
 
 # NeoFold ドキュメント（ドラフト）
 

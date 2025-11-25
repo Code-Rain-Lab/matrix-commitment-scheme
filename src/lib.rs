@@ -3,10 +3,12 @@ pub mod fold;
 pub mod fq;
 pub mod fq2;
 pub mod mat;
+pub mod matrix;
 pub mod mle;
 pub mod reduction;
 pub mod rq;
 pub mod utils;
+pub mod vector;
 
 pub use commit::MatrixCommitmentScheme;
 pub use rq::Rq;

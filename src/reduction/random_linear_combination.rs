@@ -13,7 +13,54 @@ use crate::{
     fold::{CircuitVariable, Var},
     fq2::Fq2,
     mat::Mat,
+    matrix::Matrix,
+    vector::Vector,
 };
+
+type C<F> = Matrix<Var<F>>;
+type X<F> = Matrix<Var<F>>;
+type Y<F> = Matrix<Vector<Fq2<Var<F>>>>;
+type Z<F> = Matrix<F>; // Z^T
+
+pub fn aaa<F: PrimeField>(
+    c: Vec<C<F>>,
+    x: Vec<X<F>>,
+    y: Vec<Y<F>>,
+    z: Vec<Z<bool>>, // Z^T
+) -> (C<F>, X<F>, Y<F>, Z<F>) {
+    let rho: Vec<Matrix<_>> = challenge::<Vector<Var<F>>>().take(K).map(_rot).collect();
+
+    let c: Matrix<_> = c
+        .into_iter()
+        .zip(&rho)
+        .map(|(c_i, rho_i)| {
+            let mat = c_i.rows().into_iter().map(|cf| rho_i * &cf).collect();
+            Matrix(mat)
+        })
+        .sum();
+
+    let x: Matrix<_> = x
+        .into_iter()
+        .zip(&rho)
+        .map(|(x_i, rho_i)| {
+            let mat = x_i.rows().into_iter().map(|cf| rho_i * &cf).collect();
+            Matrix(mat)
+        })
+        .sum();
+
+    // let y = y.iter().map(|mat| {});
+    let z: Matrix<_> = z
+        .into_iter()
+        .zip(&rho)
+        .map(|(z_i, rho_i)| {
+            let rho_i = rho_i.value();
+            let mat = z_i.rows().into_iter().map(|cf| &rho_i * cf).collect();
+            Matrix(mat)
+        })
+        .sum();
+
+    todo!()
+}
 
 pub fn random_linear_combination_reduction<F: PrimeField>(
     c: Vec<Vec<Var<F>>>,
@@ -24,17 +71,19 @@ pub fn random_linear_combination_reduction<F: PrimeField>(
     assert!(c.len() == x.len() && c.len() == z.len() && c.len() == y.len());
 
     // Verifier
-    let rho: Vec<_> = challenge::<Vec<Var<F>>>().take(K).map(rot).collect(); // チャレンジは行列のはず
+    let rho: Vec<_> = challenge::<Vec<Var<F>>>().take(K).map(rot).collect();
     let c: Vec<Var<F>> = c
         .iter()
         .zip(&rho)
         .map(|(c_i, rho_i)| rho_i * c_i)
-        .fold(vec![Var::zero(); K + 1], add_vector);
+        .reduce(add_vector)
+        .unwrap();
     let x: Vec<Var<F>> = x
         .iter()
         .zip(&rho)
         .map(|(x_i, rho_i)| rho_i * x_i)
-        .fold(vec![Var::zero(); K + 1], add_vector);
+        .reduce(add_vector)
+        .unwrap();
     let y = y
         .iter()
         .zip(&rho)
@@ -62,6 +111,10 @@ pub fn random_linear_combination_reduction<F: PrimeField>(
 
 fn add_vector<F: Add<Output = F>>(a: Vec<F>, b: Vec<F>) -> Vec<F> {
     a.into_iter().zip(b).map(|(a, b)| a + b).collect()
+}
+
+pub fn _rot<F: PrimeField>(a: Vector<Var<F>>) -> Matrix<Var<F>> {
+    todo!()
 }
 
 pub fn rot<F: PrimeField>(a: Vec<Var<F>>) -> Mat<Var<F>> {

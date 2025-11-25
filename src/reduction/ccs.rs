@@ -10,9 +10,100 @@ use crate::{
     fold::{CircuitVariable, Var, alloc_fq2_vec},
     fq2::Fq2,
     mat::Mat,
+    matrix::Matrix,
     mle::{eq, mle},
     reduction::{Reduction, Transcript},
+    vector::Vector,
 };
+
+type R<F> = Vector<Fq2<Var<F>>>;
+
+type Y<F> = Vec<Vector<Fq2<Var<F>>>>;
+type Z<F> = Matrix<F>; // Z^T
+
+pub fn _ccs_reduction<F: PrimeField>(
+    zt: &[Z<bool>], // Z^T
+    r: R<F>,
+    y: Vec<Y<F>>,
+    lc: [Vec<F>; 4],
+    m: [&Matrix<F>; 4], // m_0 は単位行列なので、4つ必要か？
+) {
+    // CCS Reduction
+    let mut transcript = Transcript::new("somthing seeed");
+    let alpha = transcript.get_vec(LOG_D);
+    let beta = transcript.get_vec(LOG_DN);
+    let gamma = transcript.get();
+    let alpha_and_r = [alpha.clone(), r.0.clone()].concat();
+
+    // Since ZMᵀ = (MZᵀ)ᵀ, we apply the tranposed Z to M from right.
+    // However, from an implementation perspective, we don't transpose the MZᵀ to get the ZMᵀ at this point.
+    let mzt: Vec<Vec<Matrix<F>>> = zt
+        .iter()
+        .map(|zt_i| m.iter().map(|m_j| m_j * zt_i).collect())
+        .collect();
+
+    // Sumcheck polynomials
+    // M0は単位行列なのでR1CSを適用するのに、最初のやつは無視すればいいのか？
+    let mz: Vec<_> = lc.into_iter().map(mle).collect();
+    let poly_f = |x: &[Fq2<F>]| mz[1](x) * mz[2](x) - mz[3](x);
+    let poly_nc: Vec<_> = zt
+        .iter()
+        .map(|zt_i| {
+            |x: &[Fq2<F>]| {
+                let v = mle(zt_i.flatten().into_iter().map(Into::<F>::into).collect())(x);
+                (-3..1).map(Into::<F>::into).map(|j| v - j).sum::<Fq2<F>>()
+            }
+        })
+        .collect();
+    let poly_eval: Vec<_> = mzt[1..]
+        .iter()
+        .flatten()
+        .map(|mzt_i_j| |x: &[Fq2<F>]| eq(x, &alpha_and_r.value()) * mle(mzt_i_j.flatten())(x))
+        .collect();
+    let poly_q = |x: &[Fq2<F>]| {
+        let mut pow_g = powers_of(gamma.value());
+        pow_g.next(); // skip the γ^0
+        eq(x, &beta.value())
+            * (poly_f(&x[LOG_D..])
+                + poly_nc
+                    .iter()
+                    .zip(pow_g.by_ref())
+                    .map(|(nc_i, g_i)| g_i * nc_i(x))
+                    .sum::<Fq2<F>>())
+            + poly_eval
+                .iter()
+                .zip(pow_g.by_ref())
+                .map(|(eval_i_j, g_i_j)| g_i_j * eval_i_j(x))
+                .sum::<Fq2<F>>()
+    };
+
+    // Sumcheck Rounds
+    // T = Q(α,r) = Σ y(α)
+    let t: Fq2<Var<F>> = {
+        let mut pow = powers_of(gamma);
+        pow.by_ref().take(K + 1).for_each(|_| {}); // 必要ない分を消費する. γ^0も含めて.
+        y.into_iter()
+            .flatten()
+            .zip(pow.by_ref())
+            .map(|(y_i_j, pow)| pow * mle(y_i_j.0)(&alpha))
+            .sum()
+    };
+
+    // y' = ZMᵀr̂' = (MZᵀ)ᵀr̂'
+    let r_hat_p = Vector(r_hat(&vec![]));
+    let y_p: Vec<Vec<_>> = mzt
+        .into_iter()
+        .map(|mzt_i| {
+            mzt_i
+                .into_iter()
+                .map(|mzt_i_j| mzt_i_j.transpose() * &r_hat_p)
+                // .map(Alloc::alloc) // y'は回路内でしか使わないので、この時点でallocしても問題ない。
+                .collect()
+        })
+        .collect();
+
+    // MLE of the y' as a circuit
+}
 
 pub fn ccs_reduction<F: PrimeField>(
     z: Vec<Mat<F>>,

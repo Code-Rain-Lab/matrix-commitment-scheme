@@ -21,7 +21,7 @@ type R<F> = Vector<Fq2<Var<F>>>;
 type Y<F> = Vec<Vector<Fq2<Var<F>>>>;
 type Z<F> = Matrix<F>; // Z^T
 
-pub fn _ccs_reduction<F: PrimeField>(
+pub fn ccs_reduction<F: PrimeField>(
     zt: &[Z<bool>], // Z^T
     r: R<F>,
     y: Vec<Y<F>>,
@@ -106,8 +106,6 @@ pub fn _ccs_reduction<F: PrimeField>(
         })
         .collect();
 
-    // MLE of the y' as a circuit
-
     // v を y_primeから復元できるかを確かめる
     let mut pow = powers_of(Fq2::<Var<F>>::two());
     let m: Vec<Fq2<Var<F>>> = y_prime[0]
@@ -184,169 +182,12 @@ pub fn sumcheck<F: PrimeField>(
         let s = |x: Fq2<Var<F>>| x * a + b;
         expected_values[i].equal(s(Fq2::zero()) + s(Fq2::one()));
 
-        let challenge = Fq2::<Var<F>>::default(); // ダミー
+        let challenge = Fq2::<Var<F>>::default(); // TODO ダミー
         expected_values.push(s(challenge));
         challenges.push(challenge);
     }
     let v = expected_values.pop().unwrap();
     (v, challenges)
-}
-
-pub fn ccs_reduction<F: PrimeField>(
-    z: Vec<Mat<F>>,
-    r: Vec<Fq2<Var<F>>>,
-    y: Vec<Vec<Vec<Fq2<Var<F>>>>>,
-    lc: [Vec<F>; 3],
-    mt: [Mat<F>; 3],
-) -> (Vec<Fq2<Var<F>>>, Vec<Vec<Vec<Fq2<Var<F>>>>>) {
-    // CCS Reduction
-    let mut transcript = Transcript::new("somthing seeed");
-    let alpha = transcript.get_vec(LOG_D);
-    let beta = transcript.get_vec(LOG_DN);
-    let gamma = transcript.get();
-    let alpha_and_r = [alpha.clone(), r.clone()].concat();
-
-    let zmt: Vec<Vec<_>> = z
-        .iter()
-        .map(|z_i| mt.iter().map(|mt_j| z_i * mt_j).collect())
-        .collect();
-    let lc: Vec<_> = lc.into_iter().map(mle).collect();
-    // poly
-    let poly_f = |x: &[Fq2<F>]| lc[0](x) * lc[1](x) - lc[2](x);
-    let poly_nc: Vec<_> = z
-        .iter()
-        .map(|z_i| {
-            |x: &[Fq2<F>]| {
-                let v = mle(z_i.flatten())(x);
-                (-3..1).map(Into::<F>::into).map(|j| v - j).sum::<Fq2<F>>()
-            }
-        })
-        .collect();
-    let poly_eval: Vec<_> = zmt[1..]
-        .iter()
-        .flatten()
-        .map(|zmt_i_j| |x: &[Fq2<F>]| eq(x, &alpha_and_r.value()) * mle(zmt_i_j.flatten())(x))
-        .collect();
-    let poly_q = |x: &[Fq2<F>]| {
-        let mut pow = powers_of(gamma.value());
-        pow.next(); // skip the γ^0
-        eq(x, &beta.value())
-            * (poly_f(&x[LOG_D..])
-                + poly_nc
-                    .iter()
-                    .zip(pow.by_ref())
-                    .map(|(nc_i, pow)| pow * nc_i(x))
-                    .sum::<Fq2<F>>())
-            + poly_eval
-                .iter()
-                .zip(pow.by_ref())
-                .map(|(eval_i_j, pow)| pow * eval_i_j(x))
-                .sum::<Fq2<F>>()
-    };
-
-    // Q(X)のhyperbooleanでの合計Tは、yからverifierが求められる。
-    let t: Fq2<Var<F>> = {
-        let mut pow = powers_of(gamma);
-        pow.by_ref().take(K + 1).for_each(|_| {}); // 必要ない分を消費する. γ^0も含めて.
-        y.into_iter()
-            .flatten()
-            .zip(pow.by_ref())
-            .map(|(y_i_j, pow)| pow * mle(y_i_j)(&alpha))
-            .sum()
-    };
-
-    // Sumcheck
-    let mut challenges: Vec<Fq2<Var<F>>> = vec![];
-    let mut expected_values = vec![t];
-    for i in 0..LOG_DN {
-        let (eval_at_0, eval_at_1) = all_bool_patterns::<F>(LOG_DN - i - 1)
-            .map(|rest| {
-                let x_0 = [challenges.value(), vec![Fq2::zero()], rest.clone()].concat();
-                let x_1 = [challenges.value(), vec![Fq2::one()], rest.clone()].concat();
-                (poly_q(&x_0), poly_q(&x_1))
-            })
-            .fold((Fq2::<F>::zero(), Fq2::zero()), |acc, x| {
-                (acc.0 + x.0, acc.1 + x.1)
-            });
-        let (a, b) = coeffs_from_evaluation(eval_at_0, eval_at_1);
-
-        // ここでverifyする。
-        let s = |x: Fq2<Var<F>>| x * a + b;
-        expected_values[i].equal(s(Fq2::zero()) + s(Fq2::one()));
-
-        let challenge = Fq2::<Var<F>>::default(); // ダミー
-        expected_values.push(s(challenge));
-        challenges.push(challenge);
-    }
-
-    let alpha_prime = challenges[..LOG_D].to_vec();
-    let r_prime = challenges[LOG_D..].to_vec();
-    let r_hat_prime = r_hat(&r_prime.value());
-
-    // y'は回路ないで使うので、この時点で回路変数化しても良い
-    let y_prime: Vec<Vec<_>> = zmt
-        .iter()
-        .map(|zmt_i| {
-            zmt_i
-                .iter()
-                .map(|zmt_i_j| zmt_i_j * &r_hat_prime)
-                .map(alloc_fq2_vec)
-                .collect()
-        })
-        .collect();
-
-    // v を y_primeから復元できるかを確かめる
-    let v = expected_values.pop().unwrap();
-    let mut pow = powers_of(Fq2::<Var<F>>::two());
-    let m: Vec<Fq2<Var<F>>> = y_prime[0]
-        .iter()
-        .map(|y_0_j| {
-            y_0_j
-                .iter()
-                .zip(pow.by_ref())
-                .map(|(&y_0_j_l, pow)| pow * y_0_j_l)
-                .sum()
-        })
-        .collect();
-    let value_f = m[0] * m[1] - m[2];
-    let value_nc: Vec<_> = y_prime
-        .iter()
-        .map(|y_prime_i| {
-            // なぜy'(i,1)だけなのかわからない。
-            let v = mle(y_prime_i[0].clone())(&alpha_prime);
-            (-3..1)
-                .map(Into::<F>::into)
-                .map(|j| v - j)
-                .sum::<Fq2<Var<F>>>()
-        })
-        .collect();
-    let alpha_and_r_prime = challenges;
-    let value_eval: Vec<_> = y_prime[1..]
-        .iter()
-        .flatten()
-        .map(|y_prime_i_j| {
-            eq(&alpha_and_r_prime, &alpha_and_r) * mle(y_prime_i_j.clone())(&alpha_prime)
-        })
-        .collect();
-    let value_q = {
-        let mut pow = powers_of(gamma);
-        pow.next(); // skip the γ^0
-        eq(&alpha_and_r_prime, &beta)
-            * (value_f
-                + value_nc
-                    .iter()
-                    .zip(pow.by_ref())
-                    .map(|(&nc_i, pow)| pow * nc_i)
-                    .sum::<Fq2<Var<F>>>())
-            + value_eval
-                .iter()
-                .zip(pow.by_ref())
-                .map(|(&eval_i_j, pow)| pow * eval_i_j)
-                .sum::<Fq2<Var<F>>>()
-    };
-    value_q.equal(v);
-
-    (r_prime, y_prime)
 }
 
 fn all_bool_patterns<F: Field>(n: usize) -> impl Iterator<Item = Vec<Fq2<F>>> {

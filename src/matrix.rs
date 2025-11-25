@@ -7,9 +7,11 @@ use ark_ff::PrimeField;
 
 use crate::{fold::Var, fq2::Fq2, vector::Vector};
 
+#[derive(Clone)]
 pub struct Matrix<T>(pub Vec<Vector<T>>);
 
 // これはCCSのMがスパースなのでこれを用意する
+#[derive(Clone)]
 pub struct SparseMatrix<F: PrimeField>(pub Vec<Vec<(usize, F)>>);
 
 impl<T> Matrix<T> {

@@ -7,10 +7,18 @@ use ark_ff::PrimeField;
 
 use crate::{
     fold::{CircuitVariable, Var},
+    fq2::Fq2,
     matrix::Matrix,
 };
 
+#[derive(Clone)]
 pub struct Vector<T>(pub Vec<T>);
+
+impl<F: PrimeField> Vector<Fq2<F>> {
+    pub fn alloc(&self) -> Vector<Fq2<Var<F>>> {
+        todo!()
+    }
+}
 
 impl<T> Add for Vector<T>
 where

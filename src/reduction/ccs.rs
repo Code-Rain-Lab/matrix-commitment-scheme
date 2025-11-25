@@ -77,8 +77,8 @@ pub fn _ccs_reduction<F: PrimeField>(
                 .sum::<Fq2<F>>()
     };
 
-    // Sumcheck Rounds
-    // T = Q(α,r) = Σ y(α)
+    // Sumcheck
+    // T = Σ Q(x) = γ^k Σ γ^i y(α)
     let t: Fq2<Var<F>> = {
         let mut pow = powers_of(gamma);
         pow.by_ref().take(K + 1).for_each(|_| {}); // 必要ない分を消費する. γ^0も含めて.
@@ -88,21 +88,108 @@ pub fn _ccs_reduction<F: PrimeField>(
             .map(|(y_i_j, pow)| pow * mle(y_i_j.0)(&alpha))
             .sum()
     };
+    let (v, challenges) = sumcheck(poly_q, t);
+
+    let alpha_prime = challenges[..LOG_D].to_vec();
+    let r_prime = challenges[LOG_D..].to_vec();
+    let r_hat_prime = Vector(r_hat(&r_prime.value()));
 
     // y' = ZMᵀr̂' = (MZᵀ)ᵀr̂'
-    let r_hat_p = Vector(r_hat(&vec![]));
-    let y_p: Vec<Vec<_>> = mzt
+    let y_prime: Vec<Vec<_>> = mzt
         .into_iter()
         .map(|mzt_i| {
             mzt_i
                 .into_iter()
-                .map(|mzt_i_j| mzt_i_j.transpose() * &r_hat_p)
-                // .map(Alloc::alloc) // y'は回路内でしか使わないので、この時点でallocしても問題ない。
+                .map(|mzt_i_j| mzt_i_j.transpose() * &r_hat_prime)
+                .map(|v| v.alloc()) // y'は回路内でしか使わないので、この時点でallocしても問題ない。
                 .collect()
         })
         .collect();
 
     // MLE of the y' as a circuit
+
+    // v を y_primeから復元できるかを確かめる
+    let mut pow = powers_of(Fq2::<Var<F>>::two());
+    let m: Vec<Fq2<Var<F>>> = y_prime[0]
+        .iter()
+        .map(|y_0_j| {
+            y_0_j
+                .0
+                .iter()
+                .zip(pow.by_ref())
+                .map(|(&y_0_j_l, pow)| pow * y_0_j_l)
+                .sum()
+        })
+        .collect();
+    let value_f = m[1] * m[2] - m[3];
+    let value_nc: Vec<_> = y_prime
+        .iter()
+        .map(|y_prime_i| {
+            // なぜy'(i,1)だけなのかわからない。
+            let v = mle(y_prime_i[0].0.clone())(&alpha_prime);
+            (-3..1)
+                .map(Into::<F>::into)
+                .map(|j| v - j)
+                .sum::<Fq2<Var<F>>>()
+        })
+        .collect();
+    let alpha_and_r_prime = challenges;
+    let value_eval: Vec<_> = y_prime[1..]
+        .iter()
+        .flatten()
+        .map(|y_prime_i_j| {
+            eq(&alpha_and_r_prime, &alpha_and_r) * mle(y_prime_i_j.0.clone())(&alpha_prime)
+        })
+        .collect();
+    let value_q = {
+        let mut pow = powers_of(gamma);
+        pow.next(); // skip the γ^0
+        eq(&alpha_and_r_prime, &beta)
+            * (value_f
+                + value_nc
+                    .iter()
+                    .zip(pow.by_ref())
+                    .map(|(&nc_i, pow)| pow * nc_i)
+                    .sum::<Fq2<Var<F>>>())
+            + value_eval
+                .iter()
+                .zip(pow.by_ref())
+                .map(|(&eval_i_j, pow)| pow * eval_i_j)
+                .sum::<Fq2<Var<F>>>()
+    };
+    value_q.equal(v);
+
+    // (r_prime, y_prime)
+}
+
+pub fn sumcheck<F: PrimeField>(
+    poly_q: impl Fn(&[Fq2<F>]) -> Fq2<F>,
+    t: Fq2<Var<F>>,
+) -> (Fq2<Var<F>>, Vec<Fq2<Var<F>>>) {
+    let mut challenges: Vec<Fq2<Var<F>>> = vec![];
+    let mut expected_values = vec![t];
+    for i in 0..LOG_DN {
+        let (eval_at_0, eval_at_1) = all_bool_patterns::<F>(LOG_DN - i - 1)
+            .map(|rest| {
+                let x_0 = [challenges.value(), vec![Fq2::zero()], rest.clone()].concat();
+                let x_1 = [challenges.value(), vec![Fq2::one()], rest.clone()].concat();
+                (poly_q(&x_0), poly_q(&x_1))
+            })
+            .fold((Fq2::<F>::zero(), Fq2::zero()), |acc, x| {
+                (acc.0 + x.0, acc.1 + x.1)
+            });
+        let (a, b) = coeffs_from_evaluation(eval_at_0, eval_at_1);
+
+        // ここでverifyする。
+        let s = |x: Fq2<Var<F>>| x * a + b;
+        expected_values[i].equal(s(Fq2::zero()) + s(Fq2::one()));
+
+        let challenge = Fq2::<Var<F>>::default(); // ダミー
+        expected_values.push(s(challenge));
+        challenges.push(challenge);
+    }
+    let v = expected_values.pop().unwrap();
+    (v, challenges)
 }
 
 pub fn ccs_reduction<F: PrimeField>(

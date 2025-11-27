@@ -2,10 +2,7 @@ use std::ops::Mul;
 
 use ark_ff::PrimeField;
 
-use crate::{
-    fold::{CircuitVariable, Var},
-    fq2::Fq2,
-};
+use crate::{fold::CircuitVariable, fq2::Fq2};
 
 pub struct Mat<T>(Vec<Vec<T>>);
 

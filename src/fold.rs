@@ -2,8 +2,9 @@ use std::ops::{Add, Mul, Sub};
 
 use ark_ff::{One, PrimeField, Zero};
 use ark_test_curves::PrimeGroup;
+use waseki::Var;
 
-use crate::{LOG_D, LOG_DN, MatrixCommitmentScheme, Rq, fq2::Fq2, mat::Mat, reduction::Transcript};
+use crate::{LOG_D, LOG_DN, MatrixCommitmentScheme, Rq, fq2::Fq2, reduction::Transcript};
 
 pub struct Fold<F: PrimeField> {
     scheme: MatrixCommitmentScheme<F>,
@@ -57,15 +58,17 @@ pub fn augmented_synthesizer<F: PrimeField>() {
 }
 
 #[derive(Clone, Copy, Default)]
-pub struct Var<F>(F); // wasekiから持ってくる
+// pub struct Var<F>(F); // wasekiから持ってくる
+
 pub struct RqVar<F>(F);
 
-impl<F: PrimeField> From<Var<F>> for Fq2<Var<F>> {
-    fn from(value: Var<F>) -> Self {
-        // Treat a variable as the c0 term with zero for c1.
-        Self::new(value, Var(F::zero()))
-    }
-}
+// impl<F: PrimeField> From<Var<F>> for Fq2<Var<F>> {
+//     fn from(value: Var<F>) -> Self {
+//         // Treat a variable as the c0 term with zero for c1.
+//         // Self::new(value, Var(F::zero()))
+//         Self::new(value, Var::zero())
+//     }
+// }
 
 // impl<F: PrimeField> Mul for Fq2<Var<F>> {
 //     type Output = Self;
@@ -121,29 +124,29 @@ impl<F: PrimeField> Add<Fq2<F>> for Fq2<Var<F>> {
     }
 }
 
-impl<F: PrimeField> Add for Var<F> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl<F: PrimeField> Sub for Var<F> {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl<F: PrimeField> Mul for Var<F> {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        todo!()
-    }
-}
+// impl<F: PrimeField> Add for Var<F> {
+//     type Output = Self;
+//
+//     fn add(self, rhs: Self) -> Self::Output {
+//         todo!()
+//     }
+// }
+//
+// impl<F: PrimeField> Sub for Var<F> {
+//     type Output = Self;
+//
+//     fn sub(self, rhs: Self) -> Self::Output {
+//         todo!()
+//     }
+// }
+//
+// impl<F: PrimeField> Mul for Var<F> {
+//     type Output = Self;
+//
+//     fn mul(self, rhs: Self) -> Self::Output {
+//         todo!()
+//     }
+// }
 
 pub fn alloc_fq2_vec<F: PrimeField>(vec: Vec<Fq2<F>>) -> Vec<Fq2<Var<F>>> {
     todo!()
@@ -181,31 +184,31 @@ impl<F: PrimeField> CircuitVariable<Vec<F>> for Vec<Var<F>> {
     }
 }
 
-impl<F: PrimeField> Zero for Var<F>
-where
-    F: Copy + Zero,
-{
-    fn zero() -> Self {
-        todo!()
-    }
-
-    fn is_zero(&self) -> bool {
-        todo!()
-    }
-}
-
-impl<F: PrimeField> One for Var<F>
-where
-    F: Copy + Zero,
-{
-    fn one() -> Self {
-        todo!()
-    }
-
-    fn is_one(&self) -> bool {
-        todo!()
-    }
-}
+// impl<F: PrimeField> Zero for Var<F>
+// where
+//     F: Copy + Zero,
+// {
+//     fn zero() -> Self {
+//         todo!()
+//     }
+//
+//     fn is_zero(&self) -> bool {
+//         todo!()
+//     }
+// }
+//
+// impl<F: PrimeField> One for Var<F>
+// where
+//     F: Copy + Zero,
+// {
+//     fn one() -> Self {
+//         todo!()
+//     }
+//
+//     fn is_one(&self) -> bool {
+//         todo!()
+//     }
+// }
 
 // pub struct IncomingInstance<F: PrimeField> {
 //     c: Vec<Rq<F>>,

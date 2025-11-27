@@ -1,49 +1,49 @@
 use ark_ff::{Field, One, PrimeField};
 use itertools::izip;
+use waseki::Var;
 
 use crate::{
     K,
-    fold::{CircuitVariable, Var},
+    fold::CircuitVariable,
     fq2::Fq2,
-    mat::Mat,
     reduction::ccs::{powers_of, r_hat},
 };
 
-pub fn decompose_reduction<F: PrimeField>(
-    c: Vec<Var<F>>,
-    x: Mat<Var<F>>,
-    r: Vec<Fq2<Var<F>>>,
-    y: Vec<Fq2<Var<F>>>,
-    z: Mat<F>,
-    mt: [Mat<F>; 3],
-) {
-    let r_hat = r_hat(&r.value());
-    let z = split(z);
-    let c: Vec<_> = z.iter().map(commit).collect();
-    let y: Vec<Vec<_>> = z
-        .iter()
-        .map(|z_i| mt.iter().map(|mt_j| &(z_i * mt_j) * &r_hat).collect())
-        .collect();
-
-    // verify
-    let b = Var::<F>::one() + Var::<F>::one();
-    let mut pow_b = powers_of(b).take(K);
-
-    c.iter().zip(pow_b).map(|(c_i, b_i)| {
-        // let c = b_i * c_i;
-    });
-    // .fold().equal()
-
-    // yはj個で、jのうちのiをbで結合する
-}
-
-pub fn commit<F: PrimeField>(z: &Mat<F>) -> Vec<Var<F>> {
-    todo!()
-}
-
-pub fn split<F: PrimeField>(z: Mat<F>) -> Vec<Mat<F>> {
-    todo!()
-}
+// pub fn decompose_reduction<F: PrimeField>(
+//     c: Vec<Var<F>>,
+//     x: Mat<Var<F>>,
+//     r: Vec<Fq2<Var<F>>>,
+//     y: Vec<Fq2<Var<F>>>,
+//     z: Mat<F>,
+//     mt: [Mat<F>; 3],
+// ) {
+//     let r_hat = r_hat(&r.value());
+//     let z = split(z);
+//     let c: Vec<_> = z.iter().map(commit).collect();
+//     let y: Vec<Vec<_>> = z
+//         .iter()
+//         .map(|z_i| mt.iter().map(|mt_j| &(z_i * mt_j) * &r_hat).collect())
+//         .collect();
+//
+//     // verify
+//     let b = Var::<F>::one() + Var::<F>::one();
+//     let mut pow_b = powers_of(b).take(K);
+//
+//     c.iter().zip(pow_b).map(|(c_i, b_i)| {
+//         // let c = b_i * c_i;
+//     });
+//     // .fold().equal()
+//
+//     // yはj個で、jのうちのiをbで結合する
+// }
+//
+// pub fn commit<F: PrimeField>(z: &Mat<F>) -> Vec<Var<F>> {
+//     todo!()
+// }
+//
+// pub fn split<F: PrimeField>(z: Mat<F>) -> Vec<Mat<F>> {
+//     todo!()
+// }
 
 // impl<F: PrimeField> Reduction<F> {
 //     pub fn decompose_reduction(&mut self, me: SingleMe<F>) -> ME<F> {

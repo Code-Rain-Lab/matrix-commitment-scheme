@@ -2,7 +2,7 @@ pub mod commit;
 pub mod fold;
 pub mod fq;
 pub mod fq2;
-pub mod mat;
+// pub mod mat;
 pub mod matrix;
 pub mod mle;
 pub mod reduction;

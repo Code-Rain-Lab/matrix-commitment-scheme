@@ -4,12 +4,12 @@ use ark_ff::{Field, PrimeField};
 use ark_std::iterable::Iterable;
 use itertools::Itertools;
 use num_traits::{One, Zero};
+use waseki::Var;
 
 use crate::{
     D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
-    fold::{CircuitVariable, Var, alloc_fq2_vec},
+    fold::{CircuitVariable, alloc_fq2_vec},
     fq2::Fq2,
-    mat::Mat,
     matrix::Matrix,
     mle::{eq, mle},
     reduction::{Reduction, Transcript},
@@ -182,7 +182,7 @@ pub fn sumcheck<F: PrimeField>(
         let s = |x: Fq2<Var<F>>| x * a + b;
         expected_values[i].equal(s(Fq2::zero()) + s(Fq2::one()));
 
-        let challenge = Fq2::<Var<F>>::default(); // TODO ダミー
+        let challenge = Fq2::<Var<F>>::one(); // TODO ダミー
         expected_values.push(s(challenge));
         challenges.push(challenge);
     }

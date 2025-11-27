@@ -4,12 +4,9 @@ use std::{
 };
 
 use ark_ff::PrimeField;
+use waseki::Var;
 
-use crate::{
-    fold::{CircuitVariable, Var},
-    fq2::Fq2,
-    matrix::Matrix,
-};
+use crate::{fold::CircuitVariable, fq2::Fq2, matrix::Matrix};
 
 #[derive(Clone)]
 pub struct Vector<T>(pub Vec<T>);

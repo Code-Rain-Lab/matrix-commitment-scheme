@@ -4,8 +4,9 @@ use std::{
 };
 
 use ark_ff::PrimeField;
+use waseki::Var;
 
-use crate::{fold::Var, fq2::Fq2, vector::Vector};
+use crate::{fq2::Fq2, vector::Vector};
 
 #[derive(Clone)]
 pub struct Matrix<T>(pub Vec<Vector<T>>);

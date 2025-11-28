@@ -1,29 +1,5 @@
-/*
-* 元の実装はここから
-* https://github.com/arkworks-rs/crypto-primitives/blob/5f41c00669079d477077ab7521940248ec1a289d/crypto-primitives/src/sponge/poseidon/mod.rs#L54
-*/
-
-use ark_crypto_primitives::sponge::poseidon::find_poseidon_ark_and_mds;
 use ark_ff::PrimeField;
-use num_traits::One;
 use waseki::Var;
-
-type V<F> = Var<F>;
-
-/// The mode structure for duplex sponges
-#[derive(Clone, Debug)]
-pub enum DuplexSpongeMode {
-    /// The sponge is currently absorbing data.
-    Absorbing {
-        /// next position of the state to be XOR-ed when absorbing.
-        next_absorb_index: usize,
-    },
-    /// The sponge is currently squeezing data out.
-    Squeezing {
-        /// next position of the state to be outputted when squeezing.
-        next_squeeze_index: usize,
-    },
-}
 
 /// Config and RNG used
 #[derive(Clone, Debug)]
@@ -45,6 +21,148 @@ pub struct PoseidonConfig<F: PrimeField> {
     pub rate: usize,
     /// The capacity (in terms of number of field elements).
     pub capacity: usize,
+}
+
+#[derive(Clone)]
+/// A duplex sponge based using the Poseidon permutation.
+///
+/// This implementation of Poseidon is entirely from Fractal's implementation in [COS20][cos]
+/// with small syntax changes.
+///
+/// [cos]: https://eprint.iacr.org/2019/1076
+pub struct PoseidonSponge<F: PrimeField> {
+    /// Sponge Config
+    pub parameters: PoseidonConfig<F>,
+
+    // Sponge State
+    /// Current sponge's state (current elements in the permutation block)
+    pub state: Vec<F>,
+    /// Current mode (whether its absorbing or squeezing)
+    pub mode: DuplexSpongeMode,
+}
+
+impl<F: PrimeField> PoseidonSponge<F> {
+    fn apply_s_box(&self, state: &mut [F], is_full_round: bool) {
+        // Full rounds apply the S Box (x^alpha) to every element of state
+        if is_full_round {
+            for elem in state {
+                *elem = elem.pow(&[self.parameters.alpha]);
+            }
+        }
+        // Partial rounds apply the S Box (x^alpha) to just the first element of state
+        else {
+            state[0] = state[0].pow(&[self.parameters.alpha]);
+        }
+    }
+
+    fn apply_ark(&self, state: &mut [F], round_number: usize) {
+        for (i, state_elem) in state.iter_mut().enumerate() {
+            state_elem.add_assign(&self.parameters.ark[round_number][i]);
+        }
+    }
+
+    fn apply_mds(&self, state: &mut [F]) {
+        let mut new_state = Vec::new();
+        for i in 0..state.len() {
+            let mut cur = F::zero();
+            for (j, state_elem) in state.iter().enumerate() {
+                let term = state_elem.mul(&self.parameters.mds[i][j]);
+                cur.add_assign(&term);
+            }
+            new_state.push(cur);
+        }
+        state.clone_from_slice(&new_state[..state.len()])
+    }
+
+    fn permute(&mut self) {
+        let full_rounds_over_2 = self.parameters.full_rounds / 2;
+        let mut state = self.state.clone();
+        for i in 0..full_rounds_over_2 {
+            self.apply_ark(&mut state, i);
+            self.apply_s_box(&mut state, true);
+            self.apply_mds(&mut state);
+        }
+
+        for i in full_rounds_over_2..(full_rounds_over_2 + self.parameters.partial_rounds) {
+            self.apply_ark(&mut state, i);
+            self.apply_s_box(&mut state, false);
+            self.apply_mds(&mut state);
+        }
+
+        for i in (full_rounds_over_2 + self.parameters.partial_rounds)
+            ..(self.parameters.partial_rounds + self.parameters.full_rounds)
+        {
+            self.apply_ark(&mut state, i);
+            self.apply_s_box(&mut state, true);
+            self.apply_mds(&mut state);
+        }
+        self.state = state;
+    }
+
+    // Absorbs everything in elements, this does not end in an absorbtion.
+    fn absorb_internal(&mut self, mut rate_start_index: usize, elements: &[F]) {
+        let mut remaining_elements = elements;
+
+        loop {
+            // if we can finish in this call
+            if rate_start_index + remaining_elements.len() <= self.parameters.rate {
+                for (i, element) in remaining_elements.iter().enumerate() {
+                    self.state[self.parameters.capacity + i + rate_start_index] += element;
+                }
+                self.mode = DuplexSpongeMode::Absorbing {
+                    next_absorb_index: rate_start_index + remaining_elements.len(),
+                };
+
+                return;
+            }
+            // otherwise absorb (rate - rate_start_index) elements
+            let num_elements_absorbed = self.parameters.rate - rate_start_index;
+            for (i, element) in remaining_elements
+                .iter()
+                .enumerate()
+                .take(num_elements_absorbed)
+            {
+                self.state[self.parameters.capacity + i + rate_start_index] += element;
+            }
+            self.permute();
+            // the input elements got truncated by num elements absorbed
+            remaining_elements = &remaining_elements[num_elements_absorbed..];
+            rate_start_index = 0;
+        }
+    }
+
+    // Squeeze |output| many elements. This does not end in a squeeze
+    fn squeeze_internal(&mut self, mut rate_start_index: usize, output: &mut [F]) {
+        let mut output_remaining = output;
+        loop {
+            // if we can finish in this call
+            if rate_start_index + output_remaining.len() <= self.parameters.rate {
+                output_remaining.clone_from_slice(
+                    &self.state[self.parameters.capacity + rate_start_index
+                        ..(self.parameters.capacity + output_remaining.len() + rate_start_index)],
+                );
+                self.mode = DuplexSpongeMode::Squeezing {
+                    next_squeeze_index: rate_start_index + output_remaining.len(),
+                };
+                return;
+            }
+            // otherwise squeeze (rate - rate_start_index) elements
+            let num_elements_squeezed = self.parameters.rate - rate_start_index;
+            output_remaining[..num_elements_squeezed].clone_from_slice(
+                &self.state[self.parameters.capacity + rate_start_index
+                    ..(self.parameters.capacity + num_elements_squeezed + rate_start_index)],
+            );
+
+            // Repeat with updated output slices
+            output_remaining = &mut output_remaining[num_elements_squeezed..];
+            // Unless we are done with squeezing in this call, permute.
+            if !output_remaining.is_empty() {
+                self.permute();
+            }
+
+            rate_start_index = 0;
+        }
+    }
 }
 
 impl<F: PrimeField> PoseidonConfig<F> {
@@ -78,180 +196,22 @@ impl<F: PrimeField> PoseidonConfig<F> {
     }
 }
 
-#[derive(Clone)]
-/// A duplex sponge based using the Poseidon permutation.
-///
-/// This implementation of Poseidon is entirely from Fractal's implementation in [COS20][cos]
-/// with small syntax changes.
-///
-/// [cos]: https://eprint.iacr.org/2019/1076
-pub struct PoseidonSponge<F: PrimeField> {
-    /// Sponge Config
-    pub parameters: PoseidonConfig<F>,
-
-    // Sponge State
-    /// Current sponge's state (current elements in the permutation block)
-    pub state: Vec<V<F>>,
-    /// Current mode (whether its absorbing or squeezing)
-    pub mode: DuplexSpongeMode,
-
-    pub ark: Vec<Vec<V<F>>>,
-    pub mds: Vec<Vec<V<F>>>,
-}
-
 impl<F: PrimeField> PoseidonSponge<F> {
-    fn apply_s_box(&self, state: &mut [V<F>], is_full_round: bool) {
-        // Full rounds apply the S Box (x^alpha) to every element of state
-        if is_full_round {
-            for elem in state {
-                *elem = elem.pow(self.parameters.alpha);
-            }
-        }
-        // Partial rounds apply the S Box (x^alpha) to just the first element of state
-        else {
-            state[0] = state[0].pow(self.parameters.alpha);
-        }
-    }
-
-    fn apply_ark(&self, state: &mut [V<F>], round_number: usize) {
-        for (i, state_elem) in state.iter_mut().enumerate() {
-            *state_elem += self.ark[round_number][i].clone();
-        }
-    }
-
-    fn apply_mds(&self, state: &mut [V<F>]) {
-        let mut new_state = Vec::new();
-        for i in 0..state.len() {
-            let mut cur = V::one() * 0u32;
-            for (j, state_elem) in state.iter().enumerate() {
-                let term = state_elem * &self.mds[i][j];
-                cur += term;
-            }
-            new_state.push(cur);
-        }
-        state.clone_from_slice(&new_state[..state.len()])
-    }
-
-    fn permute(&mut self) {
-        let full_rounds_over_2 = self.parameters.full_rounds / 2;
-        let mut state = self.state.clone();
-        for i in 0..full_rounds_over_2 {
-            self.apply_ark(&mut state, i);
-            self.apply_s_box(&mut state, true);
-            self.apply_mds(&mut state);
-        }
-
-        for i in full_rounds_over_2..(full_rounds_over_2 + self.parameters.partial_rounds) {
-            self.apply_ark(&mut state, i);
-            self.apply_s_box(&mut state, false);
-            self.apply_mds(&mut state);
-        }
-
-        for i in (full_rounds_over_2 + self.parameters.partial_rounds)
-            ..(self.parameters.partial_rounds + self.parameters.full_rounds)
-        {
-            self.apply_ark(&mut state, i);
-            self.apply_s_box(&mut state, true);
-            self.apply_mds(&mut state);
-        }
-        self.state = state;
-    }
-
-    // Absorbs everything in elements, this does not end in an absorbtion.
-    fn absorb_internal(&mut self, mut rate_start_index: usize, elements: &[V<F>]) {
-        let mut remaining_elements = elements;
-
-        loop {
-            // if we can finish in this call
-            if rate_start_index + remaining_elements.len() <= self.parameters.rate {
-                for (i, element) in remaining_elements.iter().enumerate() {
-                    self.state[self.parameters.capacity + i + rate_start_index] += element;
-                }
-                self.mode = DuplexSpongeMode::Absorbing {
-                    next_absorb_index: rate_start_index + remaining_elements.len(),
-                };
-
-                return;
-            }
-            // otherwise absorb (rate - rate_start_index) elements
-            let num_elements_absorbed = self.parameters.rate - rate_start_index;
-            for (i, element) in remaining_elements
-                .iter()
-                .enumerate()
-                .take(num_elements_absorbed)
-            {
-                self.state[self.parameters.capacity + i + rate_start_index] += element;
-            }
-            self.permute();
-            // the input elements got truncated by num elements absorbed
-            remaining_elements = &remaining_elements[num_elements_absorbed..];
-            rate_start_index = 0;
-        }
-    }
-
-    // Squeeze |output| many elements. This does not end in a squeeze
-    fn squeeze_internal(&mut self, mut rate_start_index: usize, output: &mut [V<F>]) {
-        let mut output_remaining = output;
-        loop {
-            // if we can finish in this call
-            if rate_start_index + output_remaining.len() <= self.parameters.rate {
-                output_remaining.clone_from_slice(
-                    &self.state[self.parameters.capacity + rate_start_index
-                        ..(self.parameters.capacity + output_remaining.len() + rate_start_index)],
-                );
-                self.mode = DuplexSpongeMode::Squeezing {
-                    next_squeeze_index: rate_start_index + output_remaining.len(),
-                };
-                return;
-            }
-            // otherwise squeeze (rate - rate_start_index) elements
-            let num_elements_squeezed = self.parameters.rate - rate_start_index;
-            output_remaining[..num_elements_squeezed].clone_from_slice(
-                &self.state[self.parameters.capacity + rate_start_index
-                    ..(self.parameters.capacity + num_elements_squeezed + rate_start_index)],
-            );
-
-            // Repeat with updated output slices
-            output_remaining = &mut output_remaining[num_elements_squeezed..];
-            // Unless we are done with squeezing in this call, permute.
-            if !output_remaining.is_empty() {
-                self.permute();
-            }
-
-            rate_start_index = 0;
-        }
-    }
-}
-
-impl<F: PrimeField> PoseidonSponge<F> {
-    pub fn new(cs: CSRef<F>, parameters: &PoseidonConfig<F>) -> Self {
-        let state = vec![cs.one() * 0u32; parameters.rate + parameters.capacity];
+    pub fn new(parameters: &PoseidonConfig<F>) -> Self {
+        let state = vec![F::zero(); parameters.rate + parameters.capacity];
         let mode = DuplexSpongeMode::Absorbing {
             next_absorb_index: 0,
         };
-        let mds = parameters
-            .mds
-            .iter()
-            .map(|row| row.iter().map(|c| c.into()).collect())
-            .collect();
-        let ark = parameters
-            .ark
-            .iter()
-            .map(|row| row.iter().map(|c| c.into()).collect())
-            .collect();
 
         Self {
             parameters: parameters.clone(),
             state,
             mode,
-            cs,
-            mds,
-            ark,
         }
     }
 
-    pub fn absorb(&mut self, input: &[V<F>]) {
-        let elems = input;
+    pub fn absorb(&mut self, input: &impl Absorb<F>) {
+        let elems = input.to_sponge_field_elements_as_vec();
         if elems.is_empty() {
             return;
         }
@@ -263,17 +223,83 @@ impl<F: PrimeField> PoseidonSponge<F> {
                     self.permute();
                     absorb_index = 0;
                 }
-                self.absorb_internal(absorb_index, elems);
+                self.absorb_internal(absorb_index, elems.as_slice());
             }
             DuplexSpongeMode::Squeezing {
                 next_squeeze_index: _,
             } => {
-                self.absorb_internal(0, elems);
+                self.absorb_internal(0, elems.as_slice());
             }
         };
     }
-    pub fn squeeze_native_field_elements(&mut self, num_elements: usize) -> Vec<V<F>> {
-        let mut squeezed_elems = vec![self.cs.one() * 0u32; num_elements];
+
+    // fn squeeze_bytes(&mut self, num_bytes: usize) -> Vec<u8> {
+    //     let usable_bytes = ((F::MODULUS_BIT_SIZE - 1) / 8) as usize;
+    //
+    //     let num_elements = (num_bytes + usable_bytes - 1) / usable_bytes;
+    //     let src_elements = self.squeeze_native_field_elements(num_elements);
+    //
+    //     let mut bytes: Vec<u8> = Vec::with_capacity(usable_bytes * num_elements);
+    //     for elem in &src_elements {
+    //         let elem_bytes = elem.into_bigint().to_bytes_le();
+    //         bytes.extend_from_slice(&elem_bytes[..usable_bytes]);
+    //     }
+    //
+    //     bytes.truncate(num_bytes);
+    //     bytes
+    // }
+    //
+    // fn squeeze_bits(&mut self, num_bits: usize) -> Vec<bool> {
+    //     let usable_bits = (F::MODULUS_BIT_SIZE - 1) as usize;
+    //
+    //     let num_elements = (num_bits + usable_bits - 1) / usable_bits;
+    //     let src_elements = self.squeeze_native_field_elements(num_elements);
+    //
+    //     let mut bits: Vec<bool> = Vec::with_capacity(usable_bits * num_elements);
+    //     for elem in &src_elements {
+    //         let elem_bits = elem.into_bigint().to_bits_le();
+    //         bits.extend_from_slice(&elem_bits[..usable_bits]);
+    //     }
+    //
+    //     bits.truncate(num_bits);
+    //     bits
+    // }
+    //
+    // fn squeeze_field_elements_with_sizes<F2: PrimeField>(
+    //     &mut self,
+    //     sizes: &[FieldElementSize],
+    // ) -> Vec<F2> {
+    //     if F::characteristic() == F2::characteristic() {
+    //         // native case
+    //         let mut buf = Vec::with_capacity(sizes.len());
+    //         field_cast(
+    //             &self.squeeze_native_field_elements_with_sizes(sizes),
+    //             &mut buf,
+    //         )
+    //         .unwrap();
+    //         buf
+    //     } else {
+    //         squeeze_field_elements_with_sizes_default_impl(self, sizes)
+    //     }
+    // }
+    //
+    // fn squeeze_field_elements<F2: PrimeField>(&mut self, num_elements: usize) -> Vec<F2> {
+    //     if TypeId::of::<F>() == TypeId::of::<F2>() {
+    //         let result = self.squeeze_native_field_elements(num_elements);
+    //         let mut cast = Vec::with_capacity(result.len());
+    //         field_cast(&result, &mut cast).unwrap();
+    //         cast
+    //     } else {
+    //         self.squeeze_field_elements_with_sizes::<F2>(
+    //             vec![FieldElementSize::Full; num_elements].as_slice(),
+    //         )
+    //     }
+    // }
+}
+
+impl<F: PrimeField> PoseidonSponge<F> {
+    fn squeeze_native_field_elements(&mut self, num_elements: usize) -> Vec<F> {
+        let mut squeezed_elems = vec![F::zero(); num_elements];
         match self.mode {
             DuplexSpongeMode::Absorbing {
                 next_absorb_index: _,
@@ -295,106 +321,84 @@ impl<F: PrimeField> PoseidonSponge<F> {
     }
 }
 
-/// This Poseidon configuration generator produces a Poseidon configuration with custom parameters
-pub fn poseidon_custom_config<F: PrimeField>(
-    full_rounds: usize,
-    partial_rounds: usize,
-    alpha: u64,
-    rate: usize,
-    capacity: usize,
-) -> PoseidonConfig<F> {
-    let (ark, mds) = find_poseidon_ark_and_mds::<F>(
-        F::MODULUS_BIT_SIZE as u64,
-        rate,
-        full_rounds as u64,
-        partial_rounds as u64,
-        0,
-    );
+// #[derive(Clone)]
+// /// Stores the state of a Poseidon Sponge. Does not store any parameter.
+// pub struct PoseidonSpongeState<F: PrimeField> {
+//     state: Vec<F>,
+//     mode: DuplexSpongeMode,
+// }
+//
+// impl<CF: PrimeField> SpongeExt for PoseidonSponge<CF> {
+//     type State = PoseidonSpongeState<CF>;
+//
+//     fn from_state(state: Self::State, params: &Self::Config) -> Self {
+//         let mut sponge = Self::new(params);
+//         sponge.mode = state.mode;
+//         sponge.state = state.state;
+//         sponge
+//     }
+//
+//     fn into_state(self) -> Self::State {
+//         Self::State {
+//             state: self.state,
+//             mode: self.mode,
+//         }
+//     }
+// }
 
-    PoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
+// utils
+/// The mode structure for duplex sponges
+#[derive(Clone, Debug)]
+pub enum DuplexSpongeMode {
+    /// The sponge is currently absorbing data.
+    Absorbing {
+        /// next position of the state to be XOR-ed when absorbing.
+        next_absorb_index: usize,
+    },
+    /// The sponge is currently squeezing data out.
+    Squeezing {
+        /// next position of the state to be outputted when squeezing.
+        next_squeeze_index: usize,
+    },
 }
 
-/// This Poseidon configuration generator agrees with Circom's Poseidon(4) in the case of BN254's scalar field
-pub fn circom_bn254_poseidon_canonical_config<F: PrimeField>() -> PoseidonConfig<F> {
-    // 120 bit security target as in
-    // https://eprint.iacr.org/2019/458.pdf
-    // t = rate + 1
-
-    let full_rounds = 8;
-    let partial_rounds = 60;
-    let alpha = 5;
-    let rate = 4;
-
-    poseidon_custom_config(full_rounds, partial_rounds, alpha, rate, 1)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{PoseidonSponge as CWPoseidonSponge, circom_bn254_poseidon_canonical_config};
-    use crate::{CS, variables::Mode};
-    use ark_bn254::Fr;
-    use ark_crypto_primitives::sponge::{
-        CryptographicSponge, FieldBasedCryptographicSponge,
-        poseidon::{
-            PoseidonConfig as ArkPoseidonConfig, PoseidonSponge as ArkPoseidonSponge,
-            find_poseidon_ark_and_mds,
-        },
-    };
-    use ark_ff::PrimeField;
-
-    /// This Poseidon configuration generator produces a Poseidon configuration with custom parameters
-    pub fn poseidon_custom_config<F: PrimeField>(
-        full_rounds: usize,
-        partial_rounds: usize,
-        alpha: u64,
-        rate: usize,
-        capacity: usize,
-    ) -> ArkPoseidonConfig<F> {
-        let (ark, mds) = find_poseidon_ark_and_mds::<F>(
-            F::MODULUS_BIT_SIZE as u64,
-            rate,
-            full_rounds as u64,
-            partial_rounds as u64,
-            0,
-        );
-
-        ArkPoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
-    }
-
-    /// This Poseidon configuration generator agrees with Circom's Poseidon(4) in the case of BN254's scalar field
-    pub fn poseidon_canonical_config<F: PrimeField>() -> ArkPoseidonConfig<F> {
-        // 120 bit security target as in
-        // https://eprint.iacr.org/2019/458.pdf
-        // t = rate + 1
-
-        let full_rounds = 8;
-        let partial_rounds = 60;
-        let alpha = 5;
-        let rate = 4;
-
-        poseidon_custom_config(full_rounds, partial_rounds, alpha, rate, 1)
-    }
-
-    #[test]
-    pub fn test_poseidon() {
-        let values: Vec<Fr> = (0..10).map(Fr::from).collect();
-
-        // Arkのposeidon
-        let mut sponge = ArkPoseidonSponge::<Fr>::new(&poseidon_canonical_config());
-        for v in values.iter() {
-            sponge.absorb(v);
-        }
-        let ark_hash = sponge.squeeze_native_field_elements(1)[0];
-
-        // cswireのposeidon
-        let cs = CS::new_ref(Mode::Compile);
-        let config = circom_bn254_poseidon_canonical_config::<Fr>();
-        let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
-        for v in values.iter() {
-            sponge.absorb(&[v.into()]);
-        }
-        let cw_hash = sponge.squeeze_native_field_elements(1)[0].clone();
-
-        assert_eq!(ark_hash, cw_hash.raw())
+pub trait Absorb<F: PrimeField> {
+    fn to_sponge_field_elements_as_vec(&self) -> Vec<Var<F>> {
+        todo!()
     }
 }
+
+// #[cfg(test)]
+// mod test {
+//     use crate::sponge::poseidon::PoseidonDefaultConfigField;
+//     use crate::sponge::test::Fr;
+//     use crate::sponge::{
+//         CryptographicSponge, FieldBasedCryptographicSponge, poseidon::PoseidonSponge,
+//     };
+//     use ark_ff::MontFp;
+//
+//     #[test]
+//     fn test_poseidon_sponge_consistency() {
+//         let sponge_param = Fr::get_default_poseidon_parameters(2, false).unwrap();
+//
+//         let mut sponge = PoseidonSponge::<Fr>::new(&sponge_param);
+//         sponge.absorb(&vec![Fr::from(0u8), Fr::from(1u8), Fr::from(2u8)]);
+//         let res = sponge.squeeze_native_field_elements(3);
+//         assert_eq!(
+//             res[0],
+//             MontFp!(
+//                 "40442793463571304028337753002242186710310163897048962278675457993207843616876"
+//             )
+//         );
+//         assert_eq!(
+//             res[1],
+//             MontFp!("2664374461699898000291153145224099287711224021716202960480903840045233645301")
+//         );
+//         assert_eq!(
+//             res[2],
+//             MontFp!(
+//                 "50191078828066923662070228256530692951801504043422844038937334196346054068797"
+//             )
+//         );
+//     }
+// }

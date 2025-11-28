@@ -29,6 +29,16 @@ impl<T> Matrix<T> {
     }
 }
 
+impl<F: PrimeField> Matrix<F> {
+    pub fn bit_split(self) -> Vec<Matrix<bool>> {
+        todo!()
+    }
+
+    pub fn alloc(&self) -> Matrix<Var<F>> {
+        todo!()
+    }
+}
+
 // Matrix<F> * Vector<Bool> -> Vector<F>
 impl<F: PrimeField> Mul<Vector<bool>> for Matrix<F> {
     type Output = Vector<F>;
@@ -91,6 +101,24 @@ impl<F: PrimeField> Mul<&Vector<Var<F>>> for &Matrix<Var<F>> {
     type Output = Vector<Var<F>>;
 
     fn mul(self, rhs: &Vector<Var<F>>) -> Self::Output {
+        todo!()
+    }
+}
+
+// &Matrix<Fq2<Var>> * Vector<Var> -> Vector<Var>
+impl<F: PrimeField> Mul<Vector<Fq2<Var<F>>>> for &Matrix<Var<F>> {
+    type Output = Vector<Fq2<Var<F>>>;
+
+    fn mul(self, rhs: Vector<Fq2<Var<F>>>) -> Self::Output {
+        todo!()
+    }
+}
+
+// &Matrix<Fq2<Var>> * &Vector<Var> -> Vector<Var>
+impl<F: PrimeField> Mul<&Vector<Fq2<Var<F>>>> for &Matrix<Var<F>> {
+    type Output = Vector<Fq2<Var<F>>>;
+
+    fn mul(self, rhs: &Vector<Fq2<Var<F>>>) -> Self::Output {
         todo!()
     }
 }

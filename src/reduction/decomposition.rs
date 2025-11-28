@@ -1,86 +1,72 @@
-use ark_ff::{Field, One, PrimeField};
-use itertools::izip;
+use ark_ff::PrimeField;
 use waseki::Var;
 
 use crate::{
     K,
     fold::CircuitVariable,
     fq2::Fq2,
-    reduction::ccs::{powers_of, r_hat},
+    matrix::Matrix,
+    reduction::{
+        ccs::r_hat,
+        random_linear_combination::{challenge, rot},
+    },
+    vector::Vector,
 };
 
-// pub fn decompose_reduction<F: PrimeField>(
-//     c: Vec<Var<F>>,
-//     x: Mat<Var<F>>,
-//     r: Vec<Fq2<Var<F>>>,
-//     y: Vec<Fq2<Var<F>>>,
-//     z: Mat<F>,
-//     mt: [Mat<F>; 3],
-// ) {
-//     let r_hat = r_hat(&r.value());
-//     let z = split(z);
-//     let c: Vec<_> = z.iter().map(commit).collect();
-//     let y: Vec<Vec<_>> = z
-//         .iter()
-//         .map(|z_i| mt.iter().map(|mt_j| &(z_i * mt_j) * &r_hat).collect())
-//         .collect();
-//
-//     // verify
-//     let b = Var::<F>::one() + Var::<F>::one();
-//     let mut pow_b = powers_of(b).take(K);
-//
-//     c.iter().zip(pow_b).map(|(c_i, b_i)| {
-//         // let c = b_i * c_i;
-//     });
-//     // .fold().equal()
-//
-//     // yはj個で、jのうちのiをbで結合する
-// }
-//
-// pub fn commit<F: PrimeField>(z: &Mat<F>) -> Vec<Var<F>> {
-//     todo!()
-// }
-//
-// pub fn split<F: PrimeField>(z: Mat<F>) -> Vec<Mat<F>> {
-//     todo!()
-// }
+type C<F> = Matrix<Var<F>>;
+type X<F> = Matrix<Var<F>>;
+type R<F> = Vector<Fq2<F>>;
+type Y<F> = Vec<Vector<Fq2<Var<F>>>>; // y_j
+type Z<F> = Matrix<F>; // Z^T
 
-// impl<F: PrimeField> Reduction<F> {
-//     pub fn decompose_reduction(&mut self, me: SingleMe<F>) -> ME<F> {
-//         // prover
-//         // let z = split(me.z);
-//         // let c = z.iter().map(|z_i| commit).collect();
-//         // let y =
-//
-//         // verifier
-//         // c_i を2^iで結合
-//         // y_i も同様
-//         // 入力のc,yとの一致をみる
-//         todo!()
-//     }
-// }
+pub fn decompose_reduction<F: PrimeField>(
+    c_in: C<F>,
+    x_in: X<F>,
+    r: R<F>,
+    y_in: Y<F>,
+    z_in: Z<F>,         // Z^T
+    m: [&Matrix<F>; 4], // m_0 は単位行列なので、4つ必要か？
+) -> (Vec<C<F>>, Vec<X<F>>, Vec<Y<F>>) {
+    let r_hat = Vector(r_hat(&r.0));
+    let z = z_in.bit_split();
+    let c: Vec<C<F>> = z.iter().map(commit).map(|v| v.alloc()).collect();
+    let y: Vec<Y<F>> = z
+        .iter()
+        .map(|z_i| {
+            m.into_iter()
+                // (M * Z^T)^T * r = Z * M^T * r
+                .map(|m_j| (m_j * z_i).transpose() * &r_hat)
+                .map(|v| v.alloc())
+                .collect()
+        })
+        .collect();
 
-// pub fn split<F: PrimeField>(z: Vec<Rq<F>>) -> Vec<Vec<Vec<F>>> {
-//     let z: Vec<_> = z
-//         .iter()
-//         .map(|z_i| MatrixCommitmentScheme::bit_decompose_witness(&z_i.coeffs()[..]))
-//         .collect();
-//     // matrix Zの全ての要素をビット分解して、k個のmatrixを作る。
-//
-//     let mut z_0 = vec![];
-//     let mut z_1 = vec![];
-//     for z in z {
-//         let mut z_0_row = vec![];
-//         let mut z_1_row = vec![];
-//         for z in z {
-//             let coeff = z.coeffs();
-//             z_0_row.push(coeff[0]);
-//             z_1_row.push(coeff[1]);
-//         }
-//         z_0.push(z_0_row);
-//         z_1.push(z_1_row);
-//         // k個やる
-//     }
-//
-//     vec![z_0, z_1]
-// }
+    let rho: Vec<Matrix<_>> = challenge::<Vector<Var<F>>>().take(K).map(rot).collect();
+
+    // Verify
+    // let x = x_in.bit_split(); // 回路内でどうやってXをビット分解する？
+
+    c.iter()
+        .zip(&rho)
+        .map(|(c_i, rho_i)| {
+            let mat = c_i.rows().into_iter().map(|cf| rho_i * &cf).collect();
+            Matrix(mat)
+        })
+        .sum::<C<F>>()
+        .equal(c_in);
+
+    y.iter()
+        .zip(&rho)
+        .map(|(y_i, rho_i)| y_i.into_iter().map(|y_i_j| rho_i * y_i_j).collect())
+        .reduce(|acc: Vec<_>, x| acc.into_iter().zip(x).map(|(a, b)| a + b).collect())
+        .unwrap()
+        .iter()
+        .zip(y_in)
+        .map(|(y_out_j, y_in_j)| y_out_j.equal(&y_in_j));
+
+    todo!()
+}
+
+pub fn commit<F: PrimeField>(z: &Matrix<bool>) -> Matrix<F> {
+    todo!()
+}

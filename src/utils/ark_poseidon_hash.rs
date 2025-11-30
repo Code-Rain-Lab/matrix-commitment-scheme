@@ -1,4 +1,5 @@
 use ark_ff::PrimeField;
+use std::ops::{AddAssign, Mul};
 use waseki::Var;
 
 /// Config and RNG used
@@ -36,32 +37,35 @@ pub struct PoseidonSponge<F: PrimeField> {
 
     // Sponge State
     /// Current sponge's state (current elements in the permutation block)
-    pub state: Vec<F>,
+    pub state: Vec<Var<F>>,
     /// Current mode (whether its absorbing or squeezing)
     pub mode: DuplexSpongeMode,
 }
 
 impl<F: PrimeField> PoseidonSponge<F> {
-    fn apply_s_box(&self, state: &mut [F], is_full_round: bool) {
+    fn apply_s_box(&self, state: &mut [Var<F>], is_full_round: bool) {
         // Full rounds apply the S Box (x^alpha) to every element of state
         if is_full_round {
             for elem in state {
-                *elem = elem.pow(&[self.parameters.alpha]);
+                // *elem = elem.pow(&[self.parameters.alpha]);
+                *elem = elem.pow(self.parameters.alpha);
             }
         }
         // Partial rounds apply the S Box (x^alpha) to just the first element of state
         else {
-            state[0] = state[0].pow(&[self.parameters.alpha]);
+            // state[0] = state[0].pow(&[self.parameters.alpha]);
+            state[0] = state[0].pow(self.parameters.alpha);
         }
     }
 
-    fn apply_ark(&self, state: &mut [F], round_number: usize) {
+    fn apply_ark(&self, state: &mut [Var<F>], round_number: usize) {
         for (i, state_elem) in state.iter_mut().enumerate() {
             state_elem.add_assign(&self.parameters.ark[round_number][i]);
+            // state_elem += (&self.parameters.ark[round_number][i]);
         }
     }
 
-    fn apply_mds(&self, state: &mut [F]) {
+    fn apply_mds(&self, state: &mut [Var<F>]) {
         let mut new_state = Vec::new();
         for i in 0..state.len() {
             let mut cur = F::zero();

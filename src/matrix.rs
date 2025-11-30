@@ -15,9 +15,9 @@ pub struct Matrix<T>(pub Vec<Vector<T>>);
 #[derive(Clone)]
 pub struct SparseMatrix<F: PrimeField>(pub Vec<Vec<(usize, F)>>);
 
-impl<T> Matrix<T> {
-    pub fn rows(self) -> Vec<Vector<T>> {
-        self.0
+impl<T: Clone> Matrix<T> {
+    pub fn rows(&self) -> Vec<Vector<T>> {
+        self.0.clone()
     }
 
     pub fn transpose(self) -> Self {

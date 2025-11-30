@@ -677,7 +677,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "waseki"
 version = "0.1.0"
-source = "git+https://github.com/ClankPan/waseki#664df3aafca164ee68cb02726d1e379129155585"
+source = "git+https://github.com/ClankPan/waseki#b6a685ab312683e66e8fa7e822dc3f389b57a89c"
 dependencies = [
  "ark-ff",
  "ark-serialize",

@@ -1,4 +1,5 @@
 use ark_ff::PrimeField;
+use num_traits::Zero;
 use std::ops::{AddAssign, Mul};
 use waseki::Var;
 
@@ -68,10 +69,10 @@ impl<F: PrimeField> PoseidonSponge<F> {
     fn apply_mds(&self, state: &mut [Var<F>]) {
         let mut new_state = Vec::new();
         for i in 0..state.len() {
-            let mut cur = F::zero();
+            let mut cur = Var::zero();
             for (j, state_elem) in state.iter().enumerate() {
                 let term = state_elem.mul(&self.parameters.mds[i][j]);
-                cur.add_assign(&term);
+                cur.add_assign(term);
             }
             new_state.push(cur);
         }
@@ -104,7 +105,7 @@ impl<F: PrimeField> PoseidonSponge<F> {
     }
 
     // Absorbs everything in elements, this does not end in an absorbtion.
-    fn absorb_internal(&mut self, mut rate_start_index: usize, elements: &[F]) {
+    fn absorb_internal(&mut self, mut rate_start_index: usize, elements: &[Var<F>]) {
         let mut remaining_elements = elements;
 
         loop {
@@ -136,7 +137,7 @@ impl<F: PrimeField> PoseidonSponge<F> {
     }
 
     // Squeeze |output| many elements. This does not end in a squeeze
-    fn squeeze_internal(&mut self, mut rate_start_index: usize, output: &mut [F]) {
+    fn squeeze_internal(&mut self, mut rate_start_index: usize, output: &mut [Var<F>]) {
         let mut output_remaining = output;
         loop {
             // if we can finish in this call
@@ -202,7 +203,7 @@ impl<F: PrimeField> PoseidonConfig<F> {
 
 impl<F: PrimeField> PoseidonSponge<F> {
     pub fn new(parameters: &PoseidonConfig<F>) -> Self {
-        let state = vec![F::zero(); parameters.rate + parameters.capacity];
+        let state = vec![Var::zero(); parameters.rate + parameters.capacity];
         let mode = DuplexSpongeMode::Absorbing {
             next_absorb_index: 0,
         };
@@ -302,8 +303,8 @@ impl<F: PrimeField> PoseidonSponge<F> {
 }
 
 impl<F: PrimeField> PoseidonSponge<F> {
-    fn squeeze_native_field_elements(&mut self, num_elements: usize) -> Vec<F> {
-        let mut squeezed_elems = vec![F::zero(); num_elements];
+    fn squeeze_native_field_elements(&mut self, num_elements: usize) -> Vec<Var<F>> {
+        let mut squeezed_elems = vec![Var::zero(); num_elements];
         match self.mode {
             DuplexSpongeMode::Absorbing {
                 next_absorb_index: _,

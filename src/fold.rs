@@ -112,14 +112,14 @@ impl<F: PrimeField> CircuitVariable<Fq2<F>> for Fq2<Var<F>> {
     }
 }
 
-impl<F: PrimeField> CircuitVariable<Matrix<F>> for Matrix<Var<F>> {
-    fn value(&self) -> Matrix<F> {
-        todo!()
-    }
-    fn equal(&self, rhs: Self) {
-        todo!()
-    }
-}
+// impl<F: PrimeField> CircuitVariable<Matrix<F>> for Matrix<Var<F>> {
+//     fn value(&self) -> Matrix<F> {
+//         todo!()
+//     }
+//     fn equal(&self, rhs: Self) {
+//         todo!()
+//     }
+// }
 
 impl<F: PrimeField> CircuitVariable<Vector<Fq2<F>>> for &Vector<Fq2<Var<F>>> {
     fn value(&self) -> Vector<Fq2<F>> {

@@ -36,7 +36,6 @@ impl<F: CommitmentParams> CommitmentScheme<F> {
 
     #[cfg(test)]
     fn commit_test(&self, z: &Matrix<GLFq>) -> Matrix<GLFq> {
-        let seed = "aaaaaaa";
         let vec: Vec<Vector<_>> = z.rows();
         let cols = vec.len();
 
@@ -45,7 +44,7 @@ impl<F: CommitmentParams> CommitmentScheme<F> {
             .into_par_iter()
             .map(|r| {
                 (0..cols).fold(Vector(vec![GLFq::ZERO; GLFq::D]), |acc, c| {
-                    let a_ij = reject_sampling::<GLFq, { GLFq::D }>(seed, r, c);
+                    let a_ij = reject_sampling::<GLFq, { GLFq::D }>(&self.seed, r, c);
                     let x_j = &vec[c];
                     acc + (&a_ij.rot() * x_j.clone())
                 })

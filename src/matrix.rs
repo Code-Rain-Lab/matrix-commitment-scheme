@@ -8,7 +8,7 @@ use waseki::Var;
 
 use crate::{fq2::Fq2, vector::Vector};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Matrix<T>(pub Vec<Vector<T>>);
 
 // これはCCSのMがスパースなのでこれを用意する

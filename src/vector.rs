@@ -5,7 +5,7 @@ use waseki::Var;
 
 use crate::{fold::CircuitVariable, fq2::Fq2, matrix::Matrix};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Vector<T>(pub Vec<T>);
 
 impl<T> Add for Vector<T>

@@ -1,51 +1,58 @@
 use ark_ff::{AdditiveGroup, BigInteger, Field, PrimeField};
 use ark_std::rand::{Rng, SeedableRng, rngs::StdRng};
 use core::marker::PhantomData;
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
-use std::ops::{Add, Mul};
+use std::ops::Mul;
 
 use crate::{fq::GLFq, matrix::Matrix, vector::Vector};
 
-pub struct CommitmentScheme<F: PrimeField> {
+pub trait CommitmentParams: PrimeField {
+    const D: usize;
+    const KAPPA: usize;
+    const DEFAULT_M: usize;
+}
+
+impl CommitmentParams for GLFq {
+    const D: usize = 54;
+    const KAPPA: usize = 16;
+    const DEFAULT_M: usize = 100;
+}
+
+pub struct CommitmentScheme<F: CommitmentParams> {
     seed: String,
+    m: usize,
     _marker: PhantomData<F>,
 }
 
-impl<F: PrimeField> CommitmentScheme<F> {
+impl<F: CommitmentParams> CommitmentScheme<F> {
     pub fn new(seed: impl Into<String>) -> Self {
-        Self {
-            seed: seed.into(),
-            _marker: PhantomData,
-        }
+        Self::with_m(seed, F::DEFAULT_M)
     }
 
-    // #[cfg(test)]
-    fn commit_test(&self, z: &Matrix<GLFq>) -> Matrix<GLFq> {
-        const M: usize = 100;
-        const KAPPA: usize = 16;
-        const D: usize = 54;
-        let seed = "aaaaaaa";
-        let mat: Vec<Vec<Vector<GLFq>>> = (0..KAPPA)
-            .map(|r| {
-                (0..M)
-                    .map(|c| reject_sampling::<GLFq, D>(seed, r, c))
-                    .collect()
-            })
-            .collect();
-        let vec: Vec<Vector<_>> = z.rows();
+    pub fn with_m(seed: impl Into<String>, m: usize) -> Self {
+        Self { seed: seed.into(), m, _marker: PhantomData }
+    }
 
-        // mat * vec
-        let vec: Vec<_> = mat
-            .iter()
-            .map(|row| {
-                row.iter()
-                    .zip(vec.iter())
-                    .fold(Vector(vec![GLFq::ZERO; D]), |acc, (a_ij, x_j)| {
-                        acc + (&a_ij.rot() * x_j.clone())
-                    })
+    #[cfg(test)]
+    fn commit_test(&self, z: &Matrix<GLFq>) -> Matrix<GLFq> {
+        let seed = "aaaaaaa";
+        let vec: Vec<Vector<_>> = z.rows();
+        let cols = vec.len().min(GLFq::DEFAULT_M);
+
+        // For each row r, stream over columns c and accumulate without materializing the matrix.
+        let rows: Vec<_> = (0..GLFq::KAPPA)
+            .into_par_iter()
+            .map(|r| {
+                (0..cols).fold(Vector(vec![GLFq::ZERO; GLFq::D]), |acc, c| {
+                    let a_ij = reject_sampling::<GLFq, { GLFq::D }>(seed, r, c);
+                    let x_j = &vec[c];
+                    acc + (&a_ij.rot() * x_j.clone())
+                })
             })
             .collect();
-        Matrix(vec)
+
+        Matrix(rows)
     }
 }
 
@@ -55,31 +62,23 @@ pub trait Commit<F> {
 
 impl Commit<GLFq> for CommitmentScheme<GLFq> {
     fn commit(&self, z: &Matrix<bool>) -> Matrix<GLFq> {
-        const M: usize = 100;
-        const KAPPA: usize = 16;
-        const D: usize = 54;
         let seed = "aaaaaaa";
-        let mat: Vec<Vec<Vector<GLFq>>> = (0..KAPPA)
-            .map(|r| {
-                (0..M)
-                    .map(|c| reject_sampling::<GLFq, D>(seed, r, c))
-                    .collect()
-            })
-            .collect();
         let vec: Vec<Vector<bool>> = z.rows();
+        let cols = vec.len().min(self.m);
 
-        // mat * vec
-        let vec: Vec<_> = mat
-            .iter()
-            .map(|row| {
-                row.iter()
-                    .zip(vec.iter())
-                    .fold(Vector(vec![GLFq::ZERO; D]), |acc, (a_ij, x_j)| {
-                        acc + (a_ij.rot() * x_j)
-                    })
+        // For each row r, stream over columns c and accumulate without materializing the matrix.
+        let rows: Vec<_> = (0..GLFq::KAPPA)
+            .into_par_iter()
+            .map(|r| {
+                (0..cols).fold(Vector(vec![GLFq::ZERO; GLFq::D]), |acc, c| {
+                    let a_ij = reject_sampling::<GLFq, { GLFq::D }>(seed, r, c);
+                    let x_j = &vec[c];
+                    acc + (a_ij.rot() * x_j)
+                })
             })
             .collect();
-        Matrix(vec)
+
+        Matrix(rows)
     }
 }
 
@@ -147,7 +146,7 @@ impl<F: Field> Mul<Vector<F>> for &Matrix<F> {
 
 impl Vector<GLFq> {
     pub fn rot(&self) -> Matrix<GLFq> {
-        const D: usize = 54;
+        const D: usize = <GLFq as CommitmentParams>::D;
 
         assert_eq!(self.0.len(), D);
 
@@ -202,7 +201,7 @@ impl Vector<GLFq> {
 
 impl Vector<bool> {
     pub fn from(v: &GLFq) -> Self {
-        const D: usize = 54;
+        const D: usize = <GLFq as CommitmentParams>::D;
         let bigint = v.into_bigint();
         let mut coeffs = [false; D];
         for (i, coeff) in coeffs.iter_mut().enumerate() {
@@ -318,9 +317,3 @@ mod tests {
         assert_eq!(com_c, scheme.commit_test(&c))
     }
 }
-
-/*
- * 問題: Matrix<bool>以外にコミットメントすることはないのだが、準同型性の確認のために、チャレンジをかけた結果であるMatrix<F>に対して、コミットメントをしないといけない。
- *
- *
- */

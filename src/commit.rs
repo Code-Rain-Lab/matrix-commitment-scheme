@@ -8,6 +8,8 @@ use std::ops::Mul;
 /*
  * コミットメントが遅すぎるので改善する必要がある。
  * おそらく、AjtaiMatrixの繰り返しの生成や、rotation行列の繰り返しの生成あたりがボトルネックになっていそう。
+ * ただ、Mが大きすぎて事前にメモリに置いておくのはメモリが枯渇してしまう。
+ * できるだけ再生成しない順序と、軽くて安全なhashを使う？
  */
 
 use crate::{fq::GLFq, matrix::Matrix, vector::Vector};
@@ -24,6 +26,7 @@ impl CommitmentParams for GLFq {
 
 pub struct CommitmentScheme<F: CommitmentParams> {
     seed: String,
+    // ajtai: Vec<Vec<Matrix<F>>>,
     _marker: PhantomData<F>,
 }
 

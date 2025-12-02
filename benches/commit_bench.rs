@@ -1,23 +1,24 @@
 use std::time::Duration;
 
 use ark_ff::UniformRand;
-use ark_std::rand::{Rng, SeedableRng, rngs::StdRng};
+use ark_std::rand::{SeedableRng, rngs::StdRng};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 use matrix_commitment_scheme::{
     commit::{Commit, CommitmentScheme},
     fq::GLFq,
     matrix::Matrix,
-    vector::Vector,
 };
 
 fn bench_commit(c: &mut Criterion) {
-    const M: usize = 2 << 24;
+    const M: usize = 2 << 15;
 
     let mut rng = StdRng::seed_from_u64(42);
     let z: Vec<GLFq> = (0..M).map(|_| GLFq::rand(&mut rng)).collect();
     let z = Matrix::<bool>::from(&z); // bit-split into bool columns
     let scheme = CommitmentScheme::<GLFq>::new("bench-seed");
+
+    println!("M len is {M}");
 
     let mut group = c.benchmark_group("commit");
     group

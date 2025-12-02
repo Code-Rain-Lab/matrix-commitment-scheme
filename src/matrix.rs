@@ -50,14 +50,14 @@ impl<F: PrimeField> Mul<Vector<bool>> for Matrix<F> {
 }
 
 // &Matrix<F> * Vector<Bool> -> Vector<F>
-impl<F: PrimeField> Mul<Vector<bool>> for &Matrix<F> {
-    type Output = Vector<F>;
-
-    // bool であることを利用して最適化する
-    fn mul(self, rhs: Vector<bool>) -> Self::Output {
-        todo!()
-    }
-}
+// impl<F: PrimeField> Mul<Vector<bool>> for &Matrix<F> {
+//     type Output = Vector<F>;
+//
+//     // bool であることを利用して最適化する
+//     fn mul(self, rhs: Vector<bool>) -> Self::Output {
+//         todo!()
+//     }
+// }
 
 // Matrix<F> * &Vector<Fq2> -> Vector<Fq2>
 impl<F: PrimeField> Mul<&Vector<Fq2<F>>> for Matrix<F> {
@@ -123,16 +123,37 @@ impl<F: PrimeField> Mul<&Vector<Fq2<Var<F>>>> for &Matrix<Var<F>> {
     }
 }
 
-impl<T> Add for Matrix<T> {
+impl<T> Add for Matrix<T>
+where
+    T: Add<Output = T>,
+{
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+        assert_eq!(self.0.len(), rhs.0.len(), "matrix row count mismatch");
+        let rows = self
+            .0
+            .into_iter()
+            .zip(rhs.0)
+            .map(|(l, r)| l + r)
+            .collect();
+        Matrix(rows)
     }
 }
 
-impl<T> Sum for Matrix<T> {
+impl<T> Sum for Matrix<T>
+where
+    T: Add<Output = T>,
+{
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        todo!()
+        let mut it = iter;
+        let mut acc = match it.next() {
+            Some(first) => first,
+            None => return Matrix(Vec::new()),
+        };
+        for m in it {
+            acc = acc + m;
+        }
+        acc
     }
 }

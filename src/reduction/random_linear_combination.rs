@@ -48,7 +48,7 @@ pub fn random_linear_combination_reduction<F: PrimeField>(
         .zip(&rho)
         .map(|(z_i, rho_i)| {
             let rho_i = rho_i.value();
-            let mat = z_i.rows().into_iter().map(|cf| &rho_i * cf).collect();
+            let mat = z_i.rows().into_iter().map(|cf| rho_i.clone() * cf).collect();
             Matrix(mat)
         })
         .sum();

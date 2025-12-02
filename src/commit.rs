@@ -18,6 +18,35 @@ impl<F: PrimeField> CommitmentScheme<F> {
             _marker: PhantomData,
         }
     }
+
+    // #[cfg(test)]
+    fn commit_test(&self, z: &Matrix<GLFq>) -> Matrix<GLFq> {
+        const M: usize = 100;
+        const KAPPA: usize = 16;
+        const D: usize = 54;
+        let seed = "aaaaaaa";
+        let mat: Vec<Vec<Vector<GLFq>>> = (0..KAPPA)
+            .map(|r| {
+                (0..M)
+                    .map(|c| reject_sampling::<GLFq, D>(seed, r, c))
+                    .collect()
+            })
+            .collect();
+        let vec: Vec<Vector<_>> = z.rows();
+
+        // mat * vec
+        let vec: Vec<_> = mat
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .zip(vec.iter())
+                    .fold(Vector(vec![GLFq::ZERO; D]), |acc, (a_ij, x_j)| {
+                        acc + (a_ij.rot() * x_j.clone())
+                    })
+            })
+            .collect();
+        Matrix(vec)
+    }
 }
 
 pub trait Commit<F> {
@@ -88,21 +117,33 @@ impl<F: Field> Mul<&Vector<bool>> for Matrix<F> {
     }
 }
 
-// impl<F: Field> Mul<Vector<F>> for &Matrix<F> {
-//     type Output = Vector<F>;
-//
-//     fn mul(self, rhs: Vector<F>) -> Self::Output {
-//         todo!()
-//     }
-// }
+impl<F: Field> Mul<Vector<F>> for &Matrix<F> {
+    type Output = Vector<F>;
 
-// impl<F: Field> Add<Matrix<F>> for Matrix<bool> {
-//     type Output = Matrix<F>;
-//
-//     fn add(self, rhs: Matrix<F>) -> Self::Output {
-//         todo!()
-//     }
-// }
+    fn mul(self, rhs: Vector<F>) -> Self::Output {
+        let n_cols = self.0.first().map(|row| row.0.len()).unwrap_or(0);
+        assert_eq!(
+            n_cols,
+            rhs.0.len(),
+            "matrix columns ({}) and vector length ({}) mismatch",
+            n_cols,
+            rhs.0.len()
+        );
+
+        let result = self
+            .0
+            .iter()
+            .map(|row| {
+                row.0
+                    .iter()
+                    .zip(&rhs.0)
+                    .fold(F::ZERO, |acc, (a, b)| acc + (*a * *b))
+            })
+            .collect();
+
+        Vector(result)
+    }
+}
 
 impl Vector<GLFq> {
     pub fn rot(&self) -> Matrix<GLFq> {

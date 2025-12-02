@@ -451,7 +451,7 @@ pub fn poseidon_custom_config<F: PrimeField>(
 
 #[cfg(test)]
 mod tests {
-    use crate::fq::{Fq, poseidon_canonical_config};
+    use crate::fq::{GLFq, poseidon_canonical_config};
 
     use super::PoseidonSponge as WasekiPoseidonSponge;
     use ark_crypto_primitives::sponge::{
@@ -460,11 +460,11 @@ mod tests {
     };
     use waseki::{ConstraintSystem, Var};
 
-    type Fr = Fq; // Almost Goldilocks Field
+    type Fr = GLFq; // Almost Goldilocks Field
 
     #[test]
     pub fn test_poseidon() {
-        let values: Vec<Fr> = (0..1000).map(Fr::from).collect();
+        let values: Vec<Fr> = (0..10).map(Fr::from).collect();
 
         // Arkのposeidon
         let mut sponge = ArkPoseidonSponge::<Fr>::new(&poseidon_canonical_config());

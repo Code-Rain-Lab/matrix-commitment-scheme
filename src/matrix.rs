@@ -8,7 +8,7 @@ use waseki::Var;
 
 use crate::{fq2::Fq2, vector::Vector};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Matrix<T>(pub Vec<Vector<T>>);
 
 // これはCCSのMがスパースなのでこれを用意する
@@ -131,12 +131,7 @@ where
 
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.0.len(), rhs.0.len(), "matrix row count mismatch");
-        let rows = self
-            .0
-            .into_iter()
-            .zip(rhs.0)
-            .map(|(l, r)| l + r)
-            .collect();
+        let rows = self.0.into_iter().zip(rhs.0).map(|(l, r)| l + r).collect();
         Matrix(rows)
     }
 }

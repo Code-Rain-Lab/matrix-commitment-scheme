@@ -41,7 +41,7 @@ impl<F: PrimeField> CommitmentScheme<F> {
                 row.iter()
                     .zip(vec.iter())
                     .fold(Vector(vec![GLFq::ZERO; D]), |acc, (a_ij, x_j)| {
-                        acc + (a_ij.rot() * x_j.clone())
+                        acc + (&a_ij.rot() * x_j.clone())
                     })
             })
             .collect();
@@ -299,9 +299,23 @@ mod tests {
         let com_b = scheme.commit(&b);
         let com_c = com_a + Matrix(com_b.rows().into_iter().map(|rq| &r * rq).collect());
 
-        // let c = a + Matrix(b.rows().into_iter().map(|rq| &r * rq).collect());
+        let a = Matrix(
+            a.rows()
+                .into_iter()
+                .map(|rq| Vector(rq.0.into_iter().map(|b| Fq::from(b)).collect()))
+                .collect(),
+        );
 
-        // assert_eq!(com_c, scheme.commit(&c))
+        let b = Matrix(
+            b.rows()
+                .into_iter()
+                .map(|rq| Vector(rq.0.into_iter().map(|b| Fq::from(b)).collect()))
+                .collect(),
+        );
+
+        let c = a + Matrix(b.rows().into_iter().map(|rq| &r * rq).collect());
+
+        assert_eq!(com_c, scheme.commit_test(&c))
     }
 }
 

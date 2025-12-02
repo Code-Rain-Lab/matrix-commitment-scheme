@@ -7,7 +7,7 @@ use num_traits::{One, Zero};
 use waseki::Var;
 
 use crate::{
-    D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T,
+    D, K, LOG_D, LOG_DN, LOG_N, M, Rq, T,
     fold::{CircuitVariable, alloc_fq2_vec},
     fq2::Fq2,
     matrix::Matrix,

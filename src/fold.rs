@@ -1,12 +1,15 @@
-use std::ops::{Add, Mul, Sub};
+use std::{
+    marker::PhantomData,
+    ops::{Add, Mul, Sub},
+};
 
 use ark_ff::PrimeField;
 use waseki::Var;
 
-use crate::{MatrixCommitmentScheme, fq2::Fq2, matrix::Matrix, vector::Vector};
+use crate::{fq2::Fq2, matrix::Matrix, vector::Vector};
 
 pub struct Fold<F: PrimeField> {
-    scheme: MatrixCommitmentScheme<F>,
+    a: PhantomData<F>, // scheme: MatrixCommitmentScheme<F>,
 }
 
 impl<F: PrimeField> Fold<F> {

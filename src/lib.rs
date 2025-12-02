@@ -10,7 +10,6 @@ pub mod rq;
 pub mod utils;
 pub mod vector;
 
-pub use commit::MatrixCommitmentScheme;
 pub use rq::Rq;
 
 pub const D: usize = 64;

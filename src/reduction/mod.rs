@@ -8,7 +8,7 @@ use ark_std::rand::{SeedableRng, rngs::StdRng};
 use itertools::Itertools;
 use waseki::Var;
 
-use crate::{D, K, LOG_D, LOG_DN, LOG_N, M, MatrixCommitmentScheme, Rq, T, fq2::Fq2};
+use crate::{D, K, LOG_D, LOG_DN, LOG_N, M, Rq, T, fq2::Fq2};
 
 pub struct Reduction<F: PrimeField> {
     ccs_matrix: [Vec<Vec<F>>; T],

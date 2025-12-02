@@ -169,6 +169,7 @@ pub fn sumcheck<F: PrimeField>(
     for i in 0..LOG_DN {
         let (eval_at_0, eval_at_1) = all_bool_patterns::<F>(LOG_DN - i - 1)
             .map(|rest| {
+                // これ、Fq2::zero(),の部分をxにしたクロージャーをさらに作ればいいのでは？
                 let x_0 = [challenges.value(), vec![Fq2::zero()], rest.clone()].concat();
                 let x_1 = [challenges.value(), vec![Fq2::one()], rest.clone()].concat();
                 (poly_q(&x_0), poly_q(&x_1))
@@ -179,6 +180,8 @@ pub fn sumcheck<F: PrimeField>(
         let (a, b) = coeffs_from_evaluation(eval_at_0, eval_at_1);
 
         // ここでverifyする。
+        // a,bが定数ではなく、変数としてallocする。
+        let (a, b): (Fq2<Var<F>>, Fq2<Var<F>>) = (a.into(), b.into());
         let s = |x: Fq2<Var<F>>| x * a + b;
         expected_values[i].equal(s(Fq2::zero()) + s(Fq2::one()));
 
@@ -187,6 +190,48 @@ pub fn sumcheck<F: PrimeField>(
         challenges.push(challenge);
     }
     let v = expected_values.pop().unwrap();
+    (v, challenges)
+}
+
+pub fn _sumcheck<F: PrimeField>(
+    poly_q: impl Fn(&[Fq2<F>]) -> Fq2<F>,
+    t: Fq2<Var<F>>,
+) -> (Fq2<Var<F>>, Vec<Fq2<Var<F>>>) {
+    let mut challenges: Vec<Fq2<Var<F>>> = Vec::with_capacity(LOG_DN);
+    let mut expected_values: Vec<Fq2<Var<F>>> = Vec::with_capacity(LOG_DN);
+    expected_values.push(t);
+    for i in 0..LOG_DN {
+        // Univariate Polynomial
+        let poly_s_i = |x_i: Fq2<F>| -> Fq2<F> {
+            let mut x = challenges.value();
+            x.push(x_i);
+            all_bool_patterns::<F>(LOG_DN - i - 1)
+                .map(|bits| {
+                    let mut x = x.clone();
+                    x.extend(bits);
+                    poly_q(&x)
+                })
+                .sum()
+        };
+        // Get coefficients of the univariate poly to use in a verify circuit
+        let cf_s_i = coeffs_from_evaluation(poly_s_i(Fq2::zero()), poly_s_i(Fq2::one()));
+
+        // ここでverifyする。
+        // Verify the univariate polynomial if it satisfies sumcheck-round
+        let cf_s_i: (Fq2<Var<F>>, Fq2<Var<F>>) = (cf_s_i.0.into(), cf_s_i.1.into()); // Allocate the coeffs as circuit variabels
+        let s_i = |x: Fq2<Var<F>>| x * cf_s_i.0 + cf_s_i.1; // Define the polynomial in the circuit
+        let t_i = s_i(Fq2::zero()) + s_i(Fq2::one()); // Evaluate the poly in the circuit and get the sum.
+
+        // Enforce equal
+        expected_values[i].equal(t_i); // Enforce to equal the sum and previous evaluation at challenge point 
+
+        let r_i = Fq2::<Var<F>>::one(); // TODO ダミー
+        let t_next = s_i(r_i); // Evaluate the poly at a new challenge point
+
+        challenges.push(r_i);
+        expected_values.push(t_next);
+    }
+    let v = expected_values[LOG_DN - 1];
     (v, challenges)
 }
 

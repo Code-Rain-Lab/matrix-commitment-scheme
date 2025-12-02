@@ -6,16 +6,15 @@ use std::{
 use ark_ff::PrimeField;
 use waseki::Var;
 
-use crate::{fold::CircuitVariable, fq2::Fq2, matrix::Matrix};
+use crate::{
+    fold::CircuitVariable,
+    fq::{AlmostGoldilocksField, GoldilocksField},
+    fq2::Fq2,
+    matrix::Matrix,
+};
 
 #[derive(Clone)]
 pub struct Vector<T>(pub Vec<T>);
-
-impl<F: PrimeField> Vector<Fq2<F>> {
-    pub fn alloc(&self) -> Vector<Fq2<Var<F>>> {
-        todo!()
-    }
-}
 
 impl<T> Add for Vector<T>
 where

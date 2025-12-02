@@ -1,8 +1,116 @@
-use ark_ff::PrimeField;
+use ark_ff::{AdditiveGroup, Field, PrimeField};
+use ark_std::rand::{SeedableRng, rngs::StdRng};
 use core::marker::PhantomData;
 use rayon::prelude::*;
+use sha2::{Digest, Sha256};
+use std::ops::Mul;
+use waseki::Var;
 
-use crate::{rq::Rq, KAPPA, M};
+use crate::{
+    KAPPA, M,
+    fq::{AGFq, GLFq},
+    fq2::Fq2,
+    matrix::Matrix,
+    rq::Rq,
+    vector::Vector,
+};
+
+pub struct CommitmentScheme<F: PrimeField> {
+    seed: String,
+    _marker: PhantomData<F>,
+}
+
+pub trait Commit<F> {
+    fn commit(&self, z: &Matrix<bool>) -> Matrix<F>;
+}
+
+impl Commit<GLFq> for CommitmentScheme<GLFq> {
+    fn commit(&self, z: &Matrix<bool>) -> Matrix<GLFq> {
+        const M: usize = 100;
+        const KAPPA: usize = 16;
+        const D: usize = 54;
+        let seed = "aaaaaaa";
+        let mat: Vec<Vec<Vector<GLFq>>> = (0..KAPPA)
+            .map(|r| {
+                (0..M)
+                    .map(|c| reject_sampling::<GLFq, D>(seed, r, c))
+                    .collect()
+            })
+            .collect();
+        let vec: Vec<Vector<bool>> = z.rows();
+
+        // mat * vec
+        let vec: Vec<_> = mat
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .zip(vec.iter())
+                    .fold(Vector(vec![GLFq::ZERO; D]), |acc, (a_ij, x_j)| {
+                        acc + (a_ij * x_j)
+                    })
+            })
+            .collect();
+        Matrix(vec)
+    }
+}
+
+impl<F: Field> Mul<&Vector<bool>> for &Vector<F> {
+    type Output = Vector<F>;
+
+    fn mul(self, rhs: &Vector<bool>) -> Self::Output {
+        // rhsがboolであるこを活かして、効率的に内積をする
+        todo!()
+    }
+}
+
+// Vector<GLFq> 用の rot
+impl Vector<GLFq> {
+    fn rot(&self) -> Matrix<GLFq> {
+        todo!()
+    }
+}
+
+// Vector<AGFq> 用の rot
+impl Vector<AGFq> {
+    fn rot(&self) -> Matrix<AGFq> {
+        todo!()
+    }
+}
+
+pub fn reject_sampling<F: Field, const D: usize>(
+    seed: &str,
+    row_idx: usize,
+    column_idx: usize,
+) -> Vector<F> {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    hasher.update(row_idx.to_le_bytes());
+    hasher.update(column_idx.to_le_bytes());
+    let digest = hasher.finalize();
+    let mut rng_seed = [0u8; 32];
+    rng_seed.copy_from_slice(&digest);
+    let mut rng = StdRng::from_seed(rng_seed);
+
+    let mut column_vec = [F::ZERO; D];
+    for element in column_vec.iter_mut() {
+        let sampled = loop {
+            let candidate = F::rand(&mut rng);
+            if !candidate.is_zero() {
+                break candidate;
+            }
+        };
+        *element = sampled;
+    }
+    Vector(column_vec.to_vec())
+}
+
+//------//
+
+impl<F: PrimeField> Vector<Fq2<F>> {
+    pub fn alloc(&self) -> Vector<Fq2<Var<F>>> {
+        todo!()
+    }
+}
 
 pub struct MatrixCommitmentScheme<F: PrimeField> {
     seed: String,

@@ -2,6 +2,7 @@ use ark_ff::PrimeField;
 use core::iter::Sum;
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use num_traits::{Inv, One, Zero};
+use waseki::Var;
 
 /// x = c0 + c1 * u, where u^2 = 3 (Δ = 3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -36,6 +37,16 @@ where
     #[inline]
     fn from(value: &F) -> Self {
         Self::new(value.clone(), F::zero())
+    }
+}
+
+impl<F: PrimeField> From<Fq2<F>> for Fq2<Var<F>>
+where
+    F: Zero + Clone,
+{
+    #[inline]
+    fn from(value: Fq2<F>) -> Self {
+        todo!()
     }
 }
 

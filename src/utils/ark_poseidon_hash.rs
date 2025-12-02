@@ -1,29 +1,33 @@
+use ark_crypto_primitives::sponge::{
+    DuplexSpongeMode,
+    poseidon::{PoseidonConfig, find_poseidon_ark_and_mds},
+};
 use ark_ff::PrimeField;
 use num_traits::Zero;
 use std::ops::{AddAssign, Mul};
 use waseki::Var;
 
-/// Config and RNG used
-#[derive(Clone, Debug)]
-pub struct PoseidonConfig<F: PrimeField> {
-    /// Number of rounds in a full-round operation.
-    pub full_rounds: usize,
-    /// Number of rounds in a partial-round operation.
-    pub partial_rounds: usize,
-    /// Exponent used in S-boxes.
-    pub alpha: u64,
-    /// Additive Round keys. These are added before each MDS matrix application to make it an affine shift.
-    /// They are indexed by `ark[round_num][state_element_index]`
-    pub ark: Vec<Vec<F>>,
-    /// Maximally Distance Separating (MDS) Matrix.
-    pub mds: Vec<Vec<F>>,
-    /// The rate (in terms of number of field elements).
-    /// See [On the Indifferentiability of the Sponge Construction](https://iacr.org/archive/eurocrypt2008/49650180/49650180.pdf)
-    /// for more details on the rate and capacity of a sponge.
-    pub rate: usize,
-    /// The capacity (in terms of number of field elements).
-    pub capacity: usize,
-}
+// /// Config and RNG used
+// #[derive(Clone, Debug)]
+// pub struct PoseidonConfig<F: PrimeField> {
+//     /// Number of rounds in a full-round operation.
+//     pub full_rounds: usize,
+//     /// Number of rounds in a partial-round operation.
+//     pub partial_rounds: usize,
+//     /// Exponent used in S-boxes.
+//     pub alpha: u64,
+//     /// Additive Round keys. These are added before each MDS matrix application to make it an affine shift.
+//     /// They are indexed by `ark[round_num][state_element_index]`
+//     pub ark: Vec<Vec<F>>,
+//     /// Maximally Distance Separating (MDS) Matrix.
+//     pub mds: Vec<Vec<F>>,
+//     /// The rate (in terms of number of field elements).
+//     /// See [On the Indifferentiability of the Sponge Construction](https://iacr.org/archive/eurocrypt2008/49650180/49650180.pdf)
+//     /// for more details on the rate and capacity of a sponge.
+//     pub rate: usize,
+//     /// The capacity (in terms of number of field elements).
+//     pub capacity: usize,
+// }
 
 #[derive(Clone)]
 /// A duplex sponge based using the Poseidon permutation.
@@ -170,36 +174,36 @@ impl<F: PrimeField> PoseidonSponge<F> {
     }
 }
 
-impl<F: PrimeField> PoseidonConfig<F> {
-    /// Initialize the parameter for Poseidon Sponge.
-    pub fn new(
-        full_rounds: usize,
-        partial_rounds: usize,
-        alpha: u64,
-        mds: Vec<Vec<F>>,
-        ark: Vec<Vec<F>>,
-        rate: usize,
-        capacity: usize,
-    ) -> Self {
-        assert_eq!(ark.len(), full_rounds + partial_rounds);
-        for item in &ark {
-            assert_eq!(item.len(), rate + capacity);
-        }
-        assert_eq!(mds.len(), rate + capacity);
-        for item in &mds {
-            assert_eq!(item.len(), rate + capacity);
-        }
-        Self {
-            full_rounds,
-            partial_rounds,
-            alpha,
-            mds,
-            ark,
-            rate,
-            capacity,
-        }
-    }
-}
+// impl<F: PrimeField> PoseidonConfig<F> {
+//     /// Initialize the parameter for Poseidon Sponge.
+//     pub fn new(
+//         full_rounds: usize,
+//         partial_rounds: usize,
+//         alpha: u64,
+//         mds: Vec<Vec<F>>,
+//         ark: Vec<Vec<F>>,
+//         rate: usize,
+//         capacity: usize,
+//     ) -> Self {
+//         assert_eq!(ark.len(), full_rounds + partial_rounds);
+//         for item in &ark {
+//             assert_eq!(item.len(), rate + capacity);
+//         }
+//         assert_eq!(mds.len(), rate + capacity);
+//         for item in &mds {
+//             assert_eq!(item.len(), rate + capacity);
+//         }
+//         Self {
+//             full_rounds,
+//             partial_rounds,
+//             alpha,
+//             mds,
+//             ark,
+//             rate,
+//             capacity,
+//         }
+//     }
+// }
 
 impl<F: PrimeField> PoseidonSponge<F> {
     pub fn new(parameters: &PoseidonConfig<F>) -> Self {
@@ -353,23 +357,27 @@ impl<F: PrimeField> PoseidonSponge<F> {
 
 // utils
 /// The mode structure for duplex sponges
-#[derive(Clone, Debug)]
-pub enum DuplexSpongeMode {
-    /// The sponge is currently absorbing data.
-    Absorbing {
-        /// next position of the state to be XOR-ed when absorbing.
-        next_absorb_index: usize,
-    },
-    /// The sponge is currently squeezing data out.
-    Squeezing {
-        /// next position of the state to be outputted when squeezing.
-        next_squeeze_index: usize,
-    },
-}
+// #[derive(Clone, Debug)]
+// pub enum DuplexSpongeMode {
+//     /// The sponge is currently absorbing data.
+//     Absorbing {
+//         /// next position of the state to be XOR-ed when absorbing.
+//         next_absorb_index: usize,
+//     },
+//     /// The sponge is currently squeezing data out.
+//     Squeezing {
+//         /// next position of the state to be outputted when squeezing.
+//         next_squeeze_index: usize,
+//     },
+// }
 
 pub trait Absorb<F: PrimeField> {
+    fn to_sponge_field_elements_as_vec(&self) -> Vec<Var<F>>;
+}
+
+impl<F: PrimeField> Absorb<F> for Var<F> {
     fn to_sponge_field_elements_as_vec(&self) -> Vec<Var<F>> {
-        todo!()
+        vec![*self]
     }
 }
 
@@ -407,3 +415,80 @@ pub trait Absorb<F: PrimeField> {
 //         );
 //     }
 // }
+
+/// This Poseidon configuration generator produces a Poseidon configuration with custom parameters
+pub fn poseidon_custom_config<F: PrimeField>(
+    full_rounds: usize,
+    partial_rounds: usize,
+    alpha: u64,
+    rate: usize,
+    capacity: usize,
+) -> PoseidonConfig<F> {
+    let (ark, mds) = find_poseidon_ark_and_mds::<F>(
+        F::MODULUS_BIT_SIZE as u64,
+        rate,
+        full_rounds as u64,
+        partial_rounds as u64,
+        0,
+    );
+
+    PoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
+}
+
+/// This Poseidon configuration generator agrees with Circom's Poseidon(4) in the case of BN254's scalar field
+// pub fn circom_bn254_poseidon_canonical_config<F: PrimeField>() -> PoseidonConfig<F> {
+//     // 120 bit security target as in
+//     // https://eprint.iacr.org/2019/458.pdf
+//     // t = rate + 1
+//
+//     let full_rounds = 8;
+//     let partial_rounds = 60;
+//     let alpha = 5;
+//     let rate = 4;
+//
+//     poseidon_custom_config(full_rounds, partial_rounds, alpha, rate, 1)
+// }
+
+#[cfg(test)]
+mod tests {
+    use crate::fq::{Fq, poseidon_canonical_config};
+
+    use super::PoseidonSponge as WasekiPoseidonSponge;
+    use ark_crypto_primitives::sponge::{
+        CryptographicSponge, FieldBasedCryptographicSponge,
+        poseidon::PoseidonSponge as ArkPoseidonSponge,
+    };
+    use waseki::{ConstraintSystem, Var};
+
+    type Fr = Fq; // Almost Goldilocks Field
+
+    #[test]
+    pub fn test_poseidon() {
+        let values: Vec<Fr> = (0..1000).map(Fr::from).collect();
+
+        // Arkのposeidon
+        let mut sponge = ArkPoseidonSponge::<Fr>::new(&poseidon_canonical_config());
+        for v in values.iter() {
+            sponge.absorb(v);
+        }
+        let ark_hash = sponge.squeeze_native_field_elements(1)[0];
+
+        // cswireのposeidon
+        let cs = ConstraintSystem::<Fr>::new();
+        // let config = circom_bn254_poseidon_canonical_config::<Fr>();
+        let config = poseidon_canonical_config::<Fr>();
+        let mut sponge = WasekiPoseidonSponge::<Fr>::new(&config);
+        for v in values.iter() {
+            let var = Var::from(*v);
+            sponge.absorb(&var);
+        }
+        let waseki_hash = sponge.squeeze_native_field_elements(1)[0];
+
+        assert_eq!(ark_hash, waseki_hash.value());
+        let compiled = cs.compile();
+        assert!(compiled.is_satisfied());
+
+        println!("witness len: {}", compiled.witness.len());
+        println!("constraints len: {}", compiled.a.len());
+    }
+}

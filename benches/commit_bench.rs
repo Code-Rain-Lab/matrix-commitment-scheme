@@ -12,7 +12,7 @@ use matrix_commitment_scheme::{
 };
 
 fn bench_commit(c: &mut Criterion) {
-    const M: usize = 100;
+    const M: usize = 2 << 24;
 
     let mut rng = StdRng::seed_from_u64(42);
     let z: Vec<GLFq> = (0..M).map(|_| GLFq::rand(&mut rng)).collect();

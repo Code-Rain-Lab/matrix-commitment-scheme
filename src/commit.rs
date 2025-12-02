@@ -10,35 +10,35 @@ use crate::{fq::GLFq, matrix::Matrix, vector::Vector};
 pub trait CommitmentParams: PrimeField {
     const D: usize;
     const KAPPA: usize;
-    const DEFAULT_M: usize;
 }
 
 impl CommitmentParams for GLFq {
     const D: usize = 54;
     const KAPPA: usize = 16;
-    const DEFAULT_M: usize = 100;
 }
 
 pub struct CommitmentScheme<F: CommitmentParams> {
     seed: String,
-    m: usize,
     _marker: PhantomData<F>,
 }
 
 impl<F: CommitmentParams> CommitmentScheme<F> {
     pub fn new(seed: impl Into<String>) -> Self {
-        Self::with_m(seed, F::DEFAULT_M)
+        Self::with_m(seed)
     }
 
-    pub fn with_m(seed: impl Into<String>, m: usize) -> Self {
-        Self { seed: seed.into(), m, _marker: PhantomData }
+    pub fn with_m(seed: impl Into<String>) -> Self {
+        Self {
+            seed: seed.into(),
+            _marker: PhantomData,
+        }
     }
 
     #[cfg(test)]
     fn commit_test(&self, z: &Matrix<GLFq>) -> Matrix<GLFq> {
         let seed = "aaaaaaa";
         let vec: Vec<Vector<_>> = z.rows();
-        let cols = vec.len().min(GLFq::DEFAULT_M);
+        let cols = vec.len();
 
         // For each row r, stream over columns c and accumulate without materializing the matrix.
         let rows: Vec<_> = (0..GLFq::KAPPA)
@@ -62,16 +62,15 @@ pub trait Commit<F> {
 
 impl Commit<GLFq> for CommitmentScheme<GLFq> {
     fn commit(&self, z: &Matrix<bool>) -> Matrix<GLFq> {
-        let seed = "aaaaaaa";
         let vec: Vec<Vector<bool>> = z.rows();
-        let cols = vec.len().min(self.m);
+        let cols = vec.len();
 
         // For each row r, stream over columns c and accumulate without materializing the matrix.
         let rows: Vec<_> = (0..GLFq::KAPPA)
             .into_par_iter()
             .map(|r| {
                 (0..cols).fold(Vector(vec![GLFq::ZERO; GLFq::D]), |acc, c| {
-                    let a_ij = reject_sampling::<GLFq, { GLFq::D }>(seed, r, c);
+                    let a_ij = reject_sampling::<GLFq, { GLFq::D }>(&self.seed, r, c);
                     let x_j = &vec[c];
                     acc + (a_ij.rot() * x_j)
                 })
@@ -279,11 +278,34 @@ mod tests {
 
     type Fq = GLFq;
 
+    // impl<F: CommitmentParams> CommitmentScheme<F> {
+    //     #[cfg(test)]
+    //     fn commit_test(&self, z: &Matrix<GLFq>) -> Matrix<GLFq> {
+    //         let seed = "aaaaaaa";
+    //         let vec: Vec<Vector<_>> = z.rows();
+    //         let cols = vec.len().min(GLFq::DEFAULT_M);
+    //
+    //         // For each row r, stream over columns c and accumulate without materializing the matrix.
+    //         let rows: Vec<_> = (0..GLFq::KAPPA)
+    //             .into_par_iter()
+    //             .map(|r| {
+    //                 (0..cols).fold(Vector(vec![GLFq::ZERO; GLFq::D]), |acc, c| {
+    //                     let a_ij = reject_sampling::<GLFq, { GLFq::D }>(seed, r, c);
+    //                     let x_j = &vec[c];
+    //                     acc + (&a_ij.rot() * x_j.clone())
+    //                 })
+    //             })
+    //             .collect();
+    //
+    //         Matrix(rows)
+    //     }
+    // }
+
     #[test]
     pub fn random_linear_combination() {
         let mut rng = test_rng();
 
-        let witness_len = 32;
+        let witness_len = 100;
         let a: Vec<Fq> = (0..witness_len).map(|_| Fq::rand(&mut rng)).collect();
         let b: Vec<Fq> = (0..witness_len).map(|_| Fq::rand(&mut rng)).collect();
 
